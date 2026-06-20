@@ -646,8 +646,14 @@ func (h *Handler) handleLLMPath(
 	}
 
 	// Dispatch based on response classification.
+	// An empty intent means the LLM identified no moderation action —
+	// treat it as chat regardless of the is_moderation flag (which
+	// may be mis-set by the LLM). Without this, an empty-intent +
+	// is_moderation=true response falls through to the moderation
+	// dispatch, which no-ops and the LLM's chat reply is lost.
 	isUtility := utilityIntents[resp.Intent]
-	if !resp.IsModeration && !isUtility {
+	isEmptyIntent := resp.Intent == ""
+	if (isEmptyIntent || !resp.IsModeration) && !isUtility {
 		h.handleChatReply(ctx, m, resp, ph)
 		return
 	}

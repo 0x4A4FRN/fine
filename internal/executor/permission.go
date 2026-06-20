@@ -116,6 +116,14 @@ func gate(
 		}
 	}
 
+	// Skip hierarchy check when the actor is targeting themselves
+	// (e.g. set_nickname on own nickname). You always have hierarchy
+	// over yourself — without this, the check fails because
+	// authorPos == targetPos (same person, same roles).
+	if targetID == action.ActorID {
+		return ""
+	}
+
 	targetMember, targetErr := api.GuildMember(action.GuildID, targetID)
 	if msg := gateCheckHierarchy(r, roles, authorMember.Roles, targetMember, api, action.GuildID); msg != "" {
 		return msg
