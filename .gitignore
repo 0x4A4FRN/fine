@@ -1,0 +1,28 @@
+# Build artifacts
+bin/
+pkg/
+./fine
+
+# Secrets
+.env*
+!.env.example
+
+# Database files
+*.db
+
+# Log files
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test coverage
+*.out
+coverage.txt
