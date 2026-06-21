@@ -587,10 +587,20 @@ func (h *Handler) handleLLMPath(
 
 	resp, err := h.ProcessMessageWithHistory(ctx, history, llmContent, replyTargetID)
 	if err != nil {
-		h.logger.Error("handler: LLM processing failed",
-			zap.String("cleaned_preview", truncateContent(cleaned, 120)),
-			zap.Error(err),
-		)
+		// Distinguish context-canceled (handler timeout) from other
+		// errors so operators can diagnose slow LLM providers.
+		if ctx.Err() != nil {
+			h.logger.Warn("handler: LLM processing timed out",
+				zap.String("cleaned_preview", truncateContent(cleaned, 120)),
+				zap.Duration("timeout", handlerTimeout),
+				zap.Error(err),
+			)
+		} else {
+			h.logger.Error("handler: LLM processing failed",
+				zap.String("cleaned_preview", truncateContent(cleaned, 120)),
+				zap.Error(err),
+			)
+		}
 		h.deletePlaceholderAndReply(ph, m.ChannelID, m.ID, validationReplyText)
 		return
 	}

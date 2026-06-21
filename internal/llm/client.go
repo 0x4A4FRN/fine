@@ -209,7 +209,19 @@ func (c *OpenAIClient) doWithRetry(
 				zap.Duration("backoff", backoff),
 				zap.Error(err),
 			)
-			time.Sleep(backoff)
+			// Context-aware sleep: if the caller's context is
+			// canceled (e.g. handler timeout expired), abort
+			// immediately instead of sleeping through the
+			// backoff and then failing on the next attempt.
+			// This prevents the retry loop from outliving the
+			// handler and sending stale replies to messages
+			// that have already been answered by a newer
+			// handler invocation.
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
 			continue
 		}
 		// Final attempt failed. If we're returning with both a non-nil
