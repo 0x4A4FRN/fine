@@ -2043,10 +2043,10 @@ self_protection:
     - "Protected. That action cannot be used against me."
     - "Don't even try that on me. It's not going to work."
     - "That command doesn't work on me. Go bother someone else."
-    - "Cannot perform that action on myself. Try targeting a human instead."
+    - "I'm a bot. You can't do that to me. Pick a human target."
     - "Denied. That cannot be inflicted on me."
     - "That action is blocked when targeted at me. Pick a real user."
-    - "Can't do that to myself. Try to use your brain next time."
+    - "Can't do that to me. Try to use your brain next time."
     - "Immune. That action cannot be used on me."
 
   author:
@@ -2305,8 +2305,8 @@ snipe:
     - "The archive search was a total flop. Give it a rest, the moment has passed."
 
   attachment:
-    - "📎 {{.filename}} — {{.url}}"
-    - "Attachment: {{.filename}} → {{.url}}"
+    - "📎 [{{.filename}}]({{.url}})"
+    - "📎 [{{.filename}}]({{.url}})"
 
   attachment_unavailable:
     - "📎 {{.filename}} (unavailable)"

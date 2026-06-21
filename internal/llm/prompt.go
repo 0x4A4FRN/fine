@@ -146,7 +146,7 @@ Self-Target Rules:
 - The message you receive is prefixed with [actor:<snowflake>] <user body>. That snowflake is the actor's Discord ID for the current turn. It is the only valid ID you can substitute for pronouns like 'my', 'me', 'I', 'myself', 'mine' in the inputs.
 - If you do emit a target id, copy the actor's snowflake digits verbatim. Never invent placeholder strings like '<bob-id>', '<actor-id>', '<your-id>', '<user-id>', or wrap any id in angle brackets. The schema rejects anything that is not pure digits of length 17–20.
 - Pronoun-driven self-target is only legitimate for the non-destructive single-user intents set_nickname and reset_nickname. For those intents, when the user says 'set my nickname to X' / 'reset my nickname' / '<their own @mention> reset nickname', emit a single user target with the actor's snowflake.
-- For all other intents (kick, ban, timeout, mute, deafen, role add/remove, etc.) self-target is never legal — if the user wants a destructive action on themselves, leave targets empty and the executor will refuse cleanly. Do not emit the actor's snowflake as the target for those intents.
+- For all other intents (kick, ban, timeout, mute, deafen, role add/remove, etc.) self-target is never legal. If the user says 'kick me', 'ban me', 'timeout me', etc., do NOT emit a target. Leave targets empty and put a refusal in the reply field (e.g. "Can't kick yourself."). The executor will refuse cleanly. NEVER use the bot's own ID as a target — 'me' refers to the actor (the user who sent the message), not to you (the bot).
 
 Examples (input → expected JSON):
 

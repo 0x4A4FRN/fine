@@ -364,10 +364,16 @@ func (e *SnipeExecutor) renderSnipeText(ctx context.Context, snap *storage.Snaps
 
 	// Attachment lines — presigned URLs if S3 is available. Format strings
 	// come from replies.yaml so operators can restyle without redeploying
-	// (Finding 3.2).
+	// (Finding 3.2). Attachments are stacked on consecutive lines so
+	// multiple files render as a clean list:
+	//   📎 [photo.png](https://presigned-url...)
+	//   📹 [video.mp4](https://presigned-url...)
 	if len(snap.Attachments) > 0 {
-		for _, att := range snap.Attachments {
-			b.WriteString("\n\n")
+		b.WriteString("\n")
+		for i, att := range snap.Attachments {
+			if i > 0 {
+				b.WriteString("\n")
+			}
 			if att.S3Key != "" && e.uploader != nil {
 				url, presignErr := e.uploader.Presign(ctx, att.S3Key, 15*time.Minute)
 				if presignErr != nil {
