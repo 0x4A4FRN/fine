@@ -68,7 +68,15 @@ func main() {
 	}
 
 	lvl, _ := logging.ParseLevel(cfg.LogLevel)
-	logger, err := logging.NewDevelopmentWithLogDir(lvl, cfg.LogDir)
+
+	// Create a log broadcaster for live log streaming via /logs SSE.
+	// Only active when LOG_STREAM_SECRET is set.
+	var logBroadcaster *logging.LogBroadcaster
+	if cfg.LogStreamSecret != "" {
+		logBroadcaster = logging.NewLogBroadcaster()
+	}
+
+	logger, err := logging.NewDevelopmentWithLogDir(lvl, cfg.LogDir, logBroadcaster)
 	if err != nil {
 		bootstrapLogger.Fatal("logger build failed",
 			zap.String("log_level", cfg.LogLevel),
@@ -261,7 +269,7 @@ func main() {
 	// timeout-grant message accordingly.
 	go handler.StartTimeoutExpirySweep(ctx, 30*time.Second)
 
-	go web.Serve(ctx, ":8080", logger)
+	go web.Serve(ctx, ":8080", logger, logBroadcaster, cfg.LogStreamSecret)
 
 	// Daily retention sweepers — delete old conversation and audit data.
 	go func() {

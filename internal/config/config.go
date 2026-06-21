@@ -15,6 +15,11 @@ type Config struct {
 	LogDir   string
 	LogLevel string
 
+	// LogStreamSecret protects the /logs SSE endpoint. If empty, the
+	// endpoint returns 503 (disabled). Set to a random string and pass
+	// as "Authorization: Bearer <secret>" header.
+	LogStreamSecret string
+
 	LLMBaseURL             string
 	LLMAPIKeys             []string
 	LLMKeyRotateEvery      int
@@ -50,6 +55,8 @@ func Load() (*Config, error) {
 
 		LogDir:   os.Getenv("LOG_DIR"),
 		LogLevel: envOr("LOG_LEVEL", "info"),
+
+		LogStreamSecret: os.Getenv("LOG_STREAM_SECRET"),
 
 		LLMBaseURL: os.Getenv("LLM_BASE_URL"),
 		LLMAPIKeys: parseAPIKeys(os.Getenv("LLM_API_KEY")),

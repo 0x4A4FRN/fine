@@ -39,34 +39,50 @@ func NewDevelopment(level zapcore.Level) (*zap.Logger, error) {
 
 // NewDevelopmentWithLogDir creates a development logger that also tee-writes
 // JSON-encoded logs to a file in dir. If dir is empty, behaves identically to
-// NewDevelopment.
-func NewDevelopmentWithLogDir(level zapcore.Level, dir string) (*zap.Logger, error) {
-	if dir == "" {
+// NewDevelopment. If broadcaster is non-nil, log lines are also fanned out
+// to SSE subscribers for live log streaming.
+func NewDevelopmentWithLogDir(level zapcore.Level, dir string, broadcaster *LogBroadcaster) (*zap.Logger, error) {
+	if dir == "" && broadcaster == nil {
 		return NewDevelopment(level)
 	}
 
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("logging: creating log dir %q: %w", dir, err)
-	}
+	var cores []zapcore.Core
 
-	logPath := filepath.Join(dir, "fine.log")
-	fileEncoder := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
-	fileCore := zapcore.NewTee(
-		zapcore.NewCore(
-			fileEncoder,
-			zapcore.AddSync(&syncFileWriter{path: logPath}),
-			level,
-		),
-	)
-
+	// Always include the development (console) logger.
 	devLogger, err := NewDevelopment(level)
 	if err != nil {
 		return nil, err
 	}
+	cores = append(cores, devLogger.Core())
 
-	return zap.New(
-		zapcore.NewTee(devLogger.Core(), fileCore),
-	), nil
+	// Optional file output (JSON).
+	if dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("logging: creating log dir %q: %w", dir, err)
+		}
+		logPath := filepath.Join(dir, "fine.log")
+		fileEncoder := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
+		cores = append(cores, zapcore.NewCore(
+			fileEncoder,
+			zapcore.AddSync(&syncFileWriter{path: logPath}),
+			level,
+		))
+	}
+
+	// Optional SSE broadcaster (JSON, same as file).
+	if broadcaster != nil {
+		broadcastCfg := zap.NewProductionEncoderConfig()
+		broadcastCfg.TimeKey = "ts"
+		broadcastCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+		broadcastEncoder := zapcore.NewJSONEncoder(broadcastCfg)
+		cores = append(cores, zapcore.NewCore(
+			broadcastEncoder,
+			zapcore.AddSync(broadcaster),
+			level,
+		))
+	}
+
+	return zap.New(zapcore.NewTee(cores...)), nil
 }
 
 // syncFileWriter is a minimal write-syncer that opens a file for appending
