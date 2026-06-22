@@ -279,6 +279,13 @@ func (r *Router) Execute(ctx context.Context, action Action) error {
 }
 
 func (r *Router) registerExecutors() {
+	// Create the snipe executor once and assign it to both the executors
+	// map AND the r.snipeExecutor field. Without the field assignment,
+	// SnipePagination/SnipeSourceMsgID/SnipeDeletePage all no-op (they
+	// guard on r.snipeExecutor == nil) and the TTL sweeper never starts.
+	snipe := NewSnipeExecutor(r.discord, r.snipeStore, r.snipeUploader, r.replies, r.logger)
+	r.snipeExecutor = snipe
+
 	r.executors = map[string]Executor{
 		"delete_message": NewDeleteMessageExecutor(r.discord, r.pool, r.replies, r.logger),
 		"ban":            NewBanExecutor(r.discord, r.pool, r.replies, r.logger),
@@ -302,7 +309,7 @@ func (r *Router) registerExecutors() {
 		"help":           NewHelpExecutor(r.replies, r.logger),
 		"info":           NewInfoExecutor(r.discord, r.replies, r.startedAt, r.buildInfo, r.userCountProvider, r.logger),
 		"status":         NewStatusExecutor(r.discord, r.pool, r.snipeUploader, r.replies, r.startedAt, r.logger),
-		"snipe":          NewSnipeExecutor(r.discord, r.snipeStore, r.snipeUploader, r.replies, r.logger),
+		"snipe":          snipe,
 	}
 }
 

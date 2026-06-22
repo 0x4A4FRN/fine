@@ -33,15 +33,16 @@ func NewStore(db DB, window time.Duration, historyLimit int) *Store {
 	return &Store{db: db, window: window, historyLimit: historyLimit}
 }
 
-func (s *Store) selectConversationQuery() string {
-	minutes := int(s.window.Minutes())
-	return fmt.Sprintf(`
+// Parameterized SQL constants. The window duration is passed as a parameter
+// ($4 / $5) rather than interpolated via fmt.Sprintf to follow the
+// project's parameterized-query convention and avoid SQL injection patterns.
+
+const selectConversationSQL = `
 SELECT id FROM conversations
 WHERE guild_id = $1 AND channel_id = $2 AND user_id = $3
-  AND last_active_at > NOW() - INTERVAL '%d minutes'
+  AND last_active_at > NOW() - ($4 || ' minutes')::INTERVAL
 ORDER BY last_active_at DESC
-LIMIT 1`, minutes)
-}
+LIMIT 1`
 
 const insertConversationSQL = `
 INSERT INTO conversations (guild_id, channel_id, user_id)
@@ -53,6 +54,15 @@ INSERT INTO conversation_messages (conversation_id, role, content, discord_msg_i
 VALUES ($1, $2, $3, $4)`
 
 const updateLastActiveSQL = `UPDATE conversations SET last_active_at = NOW() WHERE id = $1`
+
+const selectHistorySQL = `
+SELECT cm.role, cm.content
+FROM conversation_messages cm
+JOIN conversations c ON c.id = cm.conversation_id
+WHERE c.guild_id = $1 AND c.channel_id = $2 AND c.user_id = $3
+  AND c.last_active_at > NOW() - ($4 || ' minutes')::INTERVAL
+ORDER BY cm.id DESC
+LIMIT $5`
 
 func (s *Store) WriteMessage(
 	ctx context.Context,
@@ -66,13 +76,15 @@ func (s *Store) WriteMessage(
 		content = content[:assistantTruncateLimit] + "…"
 	}
 
+	minutes := int(s.window.Minutes())
 	var convID int64
 	err := s.db.QueryRow(
 		ctx,
-		s.selectConversationQuery(),
+		selectConversationSQL,
 		guildID,
 		channelID,
 		userID,
+		minutes,
 	).Scan(&convID)
 
 	if err != nil {
@@ -109,28 +121,18 @@ func (s *Store) WriteMessage(
 	return nil
 }
 
-func (s *Store) selectHistoryQuery() string {
-	minutes := int(s.window.Minutes())
-	return fmt.Sprintf(`
-SELECT cm.role, cm.content
-FROM conversation_messages cm
-JOIN conversations c ON c.id = cm.conversation_id
-WHERE c.guild_id = $1 AND c.channel_id = $2 AND c.user_id = $3
-  AND c.last_active_at > NOW() - INTERVAL '%d minutes'
-ORDER BY cm.id DESC
-LIMIT $4`, minutes)
-}
-
 func (s *Store) GetHistory(
 	ctx context.Context,
 	guildID, channelID, userID string,
 ) ([]Message, error) {
+	minutes := int(s.window.Minutes())
 	rows, err := s.db.Query(
 		ctx,
-		s.selectHistoryQuery(),
+		selectHistorySQL,
 		guildID,
 		channelID,
 		userID,
+		minutes,
 		s.historyLimit,
 	)
 	if err != nil {

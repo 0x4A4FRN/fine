@@ -475,6 +475,12 @@ func (e *SnipeExecutor) DeletePage(botMessageID string) {
 //
 // The botMessageID is the Discord snowflake of the bot's snipe message
 // (extracted from the button CustomID by the caller).
+//
+// Concurrency: pagesMu is held across the entire read-modify-write of
+// page.currentIdx. The snapshot value (not pointer) is copied under the
+// lock, and rendering happens outside the lock to avoid holding it during
+// S3 presign calls. This prevents races between concurrent button clicks
+// and the TTL sweeper goroutine.
 func (e *SnipeExecutor) HandlePagination(
 	ctx context.Context,
 	botMessageID string,
@@ -482,8 +488,8 @@ func (e *SnipeExecutor) HandlePagination(
 ) (*storage.Snapshot, string, []discordgo.MessageComponent) {
 	e.pagesMu.Lock()
 	page, ok := e.pages[botMessageID]
-	e.pagesMu.Unlock()
 	if !ok {
+		e.pagesMu.Unlock()
 		e.logger.Warn("executor: snipe: pagination state expired or not found",
 			zap.String("bot_message_id", botMessageID),
 		)
@@ -500,19 +506,27 @@ func (e *SnipeExecutor) HandlePagination(
 	case "next":
 		newIdx = page.currentIdx - 1
 	default:
+		e.pagesMu.Unlock()
 		return nil, "", nil
 	}
 	if newIdx < 0 || newIdx >= len(page.snaps) {
 		// Boundary — buttons should already be disabled, but guard anyway.
+		e.pagesMu.Unlock()
 		return nil, "", nil
 	}
 
+	// Mutate currentIdx under the lock, then copy the snapshot VALUE
+	// (not pointer) so the renderer works on a stable copy even if the
+	// sweeper evicts the page after we unlock.
 	page.currentIdx = newIdx
-	snap := &page.snaps[newIdx]
+	snap := page.snaps[newIdx] // copy
 	hasPrev := newIdx < len(page.snaps)-1
 	hasNext := newIdx > 0
-	text, components := e.renderSnipeMessage(ctx, snap, hasPrev, hasNext, botMessageID)
-	return snap, text, components
+	e.pagesMu.Unlock()
+
+	// Render outside the lock — S3 presign can take 100ms+.
+	text, components := e.renderSnipeMessage(ctx, &snap, hasPrev, hasNext, botMessageID)
+	return &snap, text, components
 }
 
 var _ Executor = (*SnipeExecutor)(nil)

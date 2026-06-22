@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -85,14 +86,21 @@ func NewDevelopmentWithLogDir(level zapcore.Level, dir string, broadcaster *LogB
 	return zap.New(zapcore.NewTee(cores...)), nil
 }
 
-// syncFileWriter is a minimal write-syncer that opens a file for appending
-// and writes to it. It does not buffer.
+// syncFileWriter is a write-syncer that opens a file for appending and
+// writes to it. It does not buffer. A mutex guards the lazy file
+// initialization and all writes to prevent data races when multiple zap
+// cores write concurrently. Without the mutex, two goroutines could both
+// observe w.f == nil, both call os.OpenFile (leaking one FD), and
+// interleave writes (corrupting the JSON log file).
 type syncFileWriter struct {
+	mu   sync.Mutex
 	path string
 	f    *os.File
 }
 
 func (w *syncFileWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.f == nil {
 		f, err := os.OpenFile(w.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		if err != nil {
@@ -104,6 +112,8 @@ func (w *syncFileWriter) Write(p []byte) (int, error) {
 }
 
 func (w *syncFileWriter) Sync() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.f == nil {
 		return nil
 	}
