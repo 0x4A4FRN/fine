@@ -40,7 +40,7 @@ func NewStore(db DB, window time.Duration, historyLimit int) *Store {
 const selectConversationSQL = `
 SELECT id FROM conversations
 WHERE guild_id = $1 AND channel_id = $2 AND user_id = $3
-  AND last_active_at > NOW() - ($4 || ' minutes')::INTERVAL
+  AND last_active_at > NOW() - $4 * INTERVAL '1 minute'
 ORDER BY last_active_at DESC
 LIMIT 1`
 
@@ -60,7 +60,7 @@ SELECT cm.role, cm.content
 FROM conversation_messages cm
 JOIN conversations c ON c.id = cm.conversation_id
 WHERE c.guild_id = $1 AND c.channel_id = $2 AND c.user_id = $3
-  AND c.last_active_at > NOW() - ($4 || ' minutes')::INTERVAL
+  AND c.last_active_at > NOW() - $4 * INTERVAL '1 minute'
 ORDER BY cm.id DESC
 LIMIT $5`
 
