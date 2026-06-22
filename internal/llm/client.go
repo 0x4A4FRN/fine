@@ -261,30 +261,61 @@ type chatChoice struct {
 	Message chatMessage `json:"message"`
 }
 
-func (c *OpenAIClient) Completion(
-	ctx context.Context,
-	prompt string,
-	schema any,
-) (*LLMResponse, error) {
+// buildSingleTurnMessages constructs the message slice for a single-turn
+// LLM call: one system message (with schema appended) + one user message.
+func (c *OpenAIClient) buildSingleTurnMessages(prompt string, schema any) ([]chatMessage, error) {
 	schemaBytes, err := json.Marshal(schema)
 	if err != nil {
 		return nil, fmt.Errorf("llm: marshaling schema: %w", err)
 	}
-
 	systemContent := "You are Fine, a Discord moderation bot. " +
 		"Reply only with valid JSON matching the schema provided. " +
 		"Output a valid json object.\n\n" +
 		string(schemaBytes)
+	return []chatMessage{
+		{Role: "system", Content: systemContent},
+		{Role: "user", Content: prompt},
+	}, nil
+}
 
+// buildMultiTurnMessages constructs the message slice for a multi-turn LLM
+// call. If the first message is a system message, the schema is appended to
+// it. Otherwise, a new system message is prepended.
+func (c *OpenAIClient) buildMultiTurnMessages(messages []Message, schema any) ([]chatMessage, error) {
+	schemaBytes, err := json.Marshal(schema)
+	if err != nil {
+		return nil, fmt.Errorf("llm: marshaling schema: %w", err)
+	}
+	chatMsgs := make([]chatMessage, 0, len(messages))
+	for _, m := range messages {
+		chatMsgs = append(chatMsgs, chatMessage(m))
+	}
+	if len(chatMsgs) > 0 && chatMsgs[0].Role == "system" {
+		chatMsgs[0].Content += "\n\n" + string(schemaBytes) +
+			"\n\nYour reply must be a valid JSON object. Output ONLY valid json."
+	} else {
+		systemContent := "You are Fine, a Discord moderation bot. " +
+			"Reply only with valid JSON matching the schema provided. " +
+			"Output a valid json object.\n\n" +
+			string(schemaBytes)
+		chatMsgs = append([]chatMessage{
+			{Role: "system", Content: systemContent},
+		}, chatMsgs...)
+	}
+	return chatMsgs, nil
+}
+
+// send is the shared transport + response-parsing pipeline used by both
+// Completion and CompletionWithMessages. It handles: marshaling the
+// request body, calling doWithRetry, reading and validating the HTTP
+// response, and unmarshaling the final LLMResponse.
+func (c *OpenAIClient) send(ctx context.Context, msgs []chatMessage) (*LLMResponse, error) {
 	reqBody := chatRequest{
 		Model: c.model,
 		ResponseFormat: &responseFormat{
 			Type: "json_object",
 		},
-		Messages: []chatMessage{
-			{Role: "system", Content: systemContent},
-			{Role: "user", Content: prompt},
-		},
+		Messages: msgs,
 	}
 
 	bodyBytes, err := json.Marshal(reqBody)
@@ -294,8 +325,7 @@ func (c *OpenAIClient) Completion(
 
 	c.logger.Info("llm: completion request",
 		zap.String("model", c.model),
-		zap.Int("prompt_len", len(prompt)),
-		zap.Int("messages_len", len(reqBody.Messages)),
+		zap.Int("messages_len", len(msgs)),
 	)
 
 	resp, err := c.doWithRetry(ctx, bodyBytes)
@@ -350,102 +380,28 @@ func (c *OpenAIClient) Completion(
 	return &llmResp, nil
 }
 
+func (c *OpenAIClient) Completion(
+	ctx context.Context,
+	prompt string,
+	schema any,
+) (*LLMResponse, error) {
+	msgs, err := c.buildSingleTurnMessages(prompt, schema)
+	if err != nil {
+		return nil, err
+	}
+	return c.send(ctx, msgs)
+}
+
 func (c *OpenAIClient) CompletionWithMessages(
 	ctx context.Context,
 	messages []Message,
 	schema any,
 ) (*LLMResponse, error) {
-	schemaBytes, err := json.Marshal(schema)
+	msgs, err := c.buildMultiTurnMessages(messages, schema)
 	if err != nil {
-		return nil, fmt.Errorf("llm: marshaling schema: %w", err)
+		return nil, err
 	}
-
-	chatMsgs := make([]chatMessage, 0, len(messages))
-	for _, m := range messages {
-		chatMsgs = append(chatMsgs, chatMessage(m))
-	}
-
-	if len(chatMsgs) > 0 && chatMsgs[0].Role == "system" {
-		chatMsgs[0].Content += "\n\n" + string(schemaBytes) +
-			"\n\nYour reply must be a valid JSON object. Output ONLY valid json."
-	} else {
-		systemContent := "You are Fine, a Discord moderation bot. " +
-			"Reply only with valid JSON matching the schema provided. " +
-			"Output a valid json object.\n\n" +
-			string(schemaBytes)
-		chatMsgs = append([]chatMessage{
-			{Role: "system", Content: systemContent},
-		}, chatMsgs...)
-	}
-
-	reqBody := chatRequest{
-		Model: c.model,
-		ResponseFormat: &responseFormat{
-			Type: "json_object",
-		},
-		Messages: chatMsgs,
-	}
-
-	bodyBytes, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("llm: marshaling request body: %w", err)
-	}
-
-	c.logger.Info("llm: completion-with-messages request",
-		zap.String("model", c.model),
-		zap.Int("messages_len", len(reqBody.Messages)),
-	)
-
-	resp, err := c.doWithRetry(ctx, bodyBytes)
-	if err != nil {
-		c.logger.Error("llm: http transport error",
-			zap.String("model", c.model),
-			zap.Error(err),
-		)
-		return nil, fmt.Errorf("llm: sending request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("llm: reading response body: %w", err)
-	}
-
-	c.logger.Info("llm: completion response received",
-		zap.String("model", c.model),
-		zap.Int("status", resp.StatusCode),
-		zap.Int("body_len", len(respBody)),
-	)
-
-	if resp.StatusCode != http.StatusOK {
-		c.logger.Error("llm: non-200 response",
-			zap.String("model", c.model),
-			zap.Int("status", resp.StatusCode),
-			zap.ByteString("body_excerpt", truncateForLog(respBody, 512)),
-		)
-		return nil, &APIError{
-			StatusCode: resp.StatusCode,
-			Body:       respBody,
-		}
-	}
-
-	var chatResp chatResponse
-	if err := json.Unmarshal(respBody, &chatResp); err != nil {
-		return nil, fmt.Errorf("llm: unmarshaling chat response: %w", err)
-	}
-
-	if len(chatResp.Choices) == 0 {
-		c.logger.Warn("llm: response had no choices", zap.String("model", c.model))
-		return nil, fmt.Errorf("llm: no choices in response")
-	}
-
-	content := chatResp.Choices[0].Message.Content
-	var llmResp LLMResponse
-	if err := json.Unmarshal([]byte(content), &llmResp); err != nil {
-		return nil, fmt.Errorf("llm: unmarshaling LLM response: %w", err)
-	}
-
-	return &llmResp, nil
+	return c.send(ctx, msgs)
 }
 
 type APIError struct {
