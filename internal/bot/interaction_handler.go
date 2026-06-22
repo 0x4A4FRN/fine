@@ -86,14 +86,14 @@ func (h *Handler) HandleInteractionCreate(_ *discordgo.Session, i *discordgo.Int
 // the interaction handler indefinitely.
 func (h *Handler) handleSnipePagination(i *discordgo.InteractionCreate, direction string) {
 	if h.snipePaginationFn == nil {
-		h.respondInteraction(i, "Snipe feature not configured.")
+		h.respondInteraction(i, h.interactionText("snipe_not_configured"))
 		return
 	}
 
 	// Parse the bot message ID from the custom ID.
 	_, botMsgID, ok := parseSnipeCustomID(i.MessageComponentData().CustomID)
 	if !ok {
-		h.respondInteraction(i, "Invalid snipe button.")
+		h.respondInteraction(i, h.interactionText("invalid_button"))
 		return
 	}
 
@@ -228,24 +228,24 @@ func (h *Handler) handleConfirmNoButton(i *discordgo.InteractionCreate, windowID
 			zap.Int64("window_id", windowID),
 			zap.Error(err),
 		)
-		h.respondInteraction(i, "Something went wrong looking up that confirmation.")
+		h.respondInteraction(i, h.interactionText("lookup_failed"))
 		return
 	}
 	if window == nil {
-		h.respondInteraction(i, "That confirmation no longer exists.")
+		h.respondInteraction(i, h.interactionText("window_not_found"))
 		return
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	// Only the original requester may cancel.
 	if clickerID != "" && window.UserID != clickerID {
-		h.respondInteraction(i, "Only the person who started this confirmation can cancel it.")
+		h.respondInteraction(i, h.interactionText("not_original_requester"))
 		return
 	}
 
 	// If the window is no longer open, it was already resolved.
 	if window.Status != "open" {
-		h.respondInteraction(i, "This confirmation has already been resolved.")
+		h.respondInteraction(i, h.interactionText("already_resolved"))
 		return
 	}
 
@@ -254,18 +254,22 @@ func (h *Handler) handleConfirmNoButton(i *discordgo.InteractionCreate, windowID
 			zap.Int64("window_id", windowID),
 			zap.Error(err),
 		)
+		h.respondInteraction(i, h.interactionText("cancel_failed"))
+		return // deferred tx.Rollback fires; window stays "open"
 	}
 	if err := tx.Commit(ctx); err != nil {
 		h.logger.Error("handler: interaction: committing cancel tx",
 			zap.Int64("window_id", windowID),
 			zap.Error(err),
 		)
+		h.respondInteraction(i, h.interactionText("cancel_failed"))
+		return
 	}
 
 	_ = h.discord.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseUpdateMessage,
 		Data: &discordgo.InteractionResponseData{
-			Content: "~~Confirm...~~ Cancelled.",
+			Content: h.interactionText("cancelled"),
 		},
 	})
 	h.logger.Info("handler: interaction: confirmation cancelled via button",
@@ -304,7 +308,7 @@ func (h *Handler) handleConfirmYesButton(i *discordgo.InteractionCreate, windowI
 			zap.String("clicker_id", clickerID),
 			zap.String("original_user_id", window.UserID),
 		)
-		h.respondInteraction(i, "Only the person who started this confirmation can confirm it.")
+		h.respondInteraction(i, h.interactionText("not_original_requester"))
 		return
 	}
 
@@ -398,12 +402,14 @@ func (h *Handler) handleConfirmYesButton(i *discordgo.InteractionCreate, windowI
 			zap.String("status", status),
 			zap.Error(err),
 		)
+		return // deferred tx.Rollback fires; window stays "open"
 	}
 	if err := tx.Commit(ctx); err != nil {
 		h.logger.Error("handler: interaction: committing tx",
 			zap.Int64("window_id", windowID),
 			zap.Error(err),
 		)
+		return
 	}
 
 	// Write the assistant outcome to the conversation store for future
@@ -439,6 +445,16 @@ func (h *Handler) respondInteraction(i *discordgo.InteractionCreate, message str
 			Flags:   discordgo.MessageFlagsEphemeral,
 		},
 	})
+}
+
+// interactionText fetches a user-facing string from the interaction
+// category in replies.yaml. Falls back to a generic bracket string if
+// replies is nil or the key doesn't exist.
+func (h *Handler) interactionText(key string) string {
+	if h.replies == nil {
+		return "[interaction." + key + "]"
+	}
+	return h.replies.Get("interaction", key, nil)
 }
 
 // BuildConfirmButtonComponents returns the Discord action row with

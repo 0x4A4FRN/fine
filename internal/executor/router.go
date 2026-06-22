@@ -249,14 +249,17 @@ func NewRouter(
 		r.logger = zap.NewNop()
 	}
 	r.registerExecutors()
-	// Start the snipe pagination TTL sweeper. The goroutine runs until
-	// Stop() is called (typically during process shutdown). Safe to
-	// call even if snipe is not configured — the executor's Start is
-	// idempotent and the sweeper is a no-op when the pages map is empty.
+	return r
+}
+
+// StartBackgroundWorkers launches background goroutines owned by the
+// Router's executors (currently only the snipe pagination TTL sweeper).
+// Must be called once after construction (typically from main.go).
+// Call Stop() during shutdown to cancel all goroutines.
+func (r *Router) StartBackgroundWorkers() {
 	if r.snipeExecutor != nil {
 		r.snipeExecutor.StartPaginationSweeper()
 	}
-	return r
 }
 
 // Stop halts any background goroutines started by the Router's executors

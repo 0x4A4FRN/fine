@@ -128,9 +128,11 @@ func (h *Handler) handlePendingConfirmation(
 
 		if err := UpdateStatus(ctx, tx, window.ID, "executed"); err != nil {
 			h.logger.Error("handler: updating window status to executed", zap.Error(err))
+			return false // window stays open for retry
 		}
 		if err := tx.Commit(ctx); err != nil {
 			h.logger.Error("handler: committing confirmation tx", zap.Error(err))
+			return false // window stays open for retry
 		}
 
 		if h.store != nil {

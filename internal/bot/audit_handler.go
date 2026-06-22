@@ -34,7 +34,7 @@ func (h *Handler) handleAuditLookup(
 	result, err := audit.Lookup(ctx, h.auditDB, m.GuildID, query)
 	if err != nil {
 		h.logger.Error("handler: audit lookup", zap.Error(err))
-		h.deletePlaceholderAndReply(ph, m.ChannelID, m.ID, "I couldn't look that up right now.")
+		h.deletePlaceholderAndReply(ph, m.ChannelID, m.ID, h.cloudyReplyText())
 		return
 	}
 
@@ -50,17 +50,15 @@ func (h *Handler) handleAuditLookup(
 		data = audit.BuildTemplateData(result)
 	}
 
-	replyText := "I don't have a record of that."
+	replyText := renderAuditReplyFallback(templateName, data)
 	if h.replies != nil {
 		rendered, err := h.replies.Render(templateName, data)
 		if err != nil {
 			h.logger.Error("handler: rendering audit reply", zap.Error(err))
+			// Fall through with the fallback text already set above.
 		} else {
 			replyText = rendered
 		}
-	} else {
-
-		replyText = renderAuditReplyFallback(templateName, data)
 	}
 
 	h.logger.Info("handler: sending audit reply",

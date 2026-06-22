@@ -213,6 +213,7 @@ func main() {
 		executor.WithUserCountProvider(convStore),
 		executor.WithSnipeExecutor(snapshotStore, s3Uploader),
 	)
+	router.StartBackgroundWorkers()
 
 	handler := bot.NewHandler(
 		llmClient,

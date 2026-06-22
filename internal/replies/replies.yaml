@@ -1,3 +1,26 @@
+interaction:
+  lookup_failed:
+    - "Something went wrong looking up that confirmation."
+    - "Couldn't find that confirmation. Technical difficulties."
+  window_not_found:
+    - "That confirmation no longer exists."
+    - "That confirmation is gone. Too slow."
+  not_original_requester:
+    - "Only the person who started this confirmation can do that."
+    - "Not your confirmation to touch."
+  already_resolved:
+    - "This confirmation has already been resolved."
+    - "Already dealt with. Move on."
+  cancel_failed:
+    - "Something went wrong cancelling that. Please try again."
+    - "Cancel failed. The confirmation is still active."
+  cancelled:
+    - "~~Confirm...~~ Cancelled."
+  snipe_not_configured:
+    - "Snipe feature not configured."
+  invalid_button:
+    - "Invalid button."
+
 audit:
   no_record:
     - "I have literally zero record of that. Are you imagining things again?"

@@ -18,15 +18,6 @@ type CountUserDB interface {
 	CountDistinctUsers(ctx context.Context) (int, error)
 }
 
-// InfoDiscordAPI is the narrow set of Discord operations InfoExecutor needs:
-// MemberAPI for the permission gate, BotInfoAPI for the actual operation.
-// Defining it consumer-side lets tests mock only these sub-interfaces
-// instead of the full DiscordAPI composite.
-type InfoDiscordAPI interface {
-	MemberAPI
-	BotInfoAPI
-}
-
 type InfoExecutor struct {
 	discord   BotInfoAPI
 	replies   *replies.Replies
