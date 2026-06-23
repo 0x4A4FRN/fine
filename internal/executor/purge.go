@@ -44,14 +44,14 @@ type PurgeDiscordAPI interface {
 type PurgeExecutor struct {
 	discord PurgeDiscordAPI
 	pool    audit.DB
-	replies *replies.Replies
+	replies replies.Renderer
 	logger  *zap.Logger
 }
 
 func NewPurgeExecutor(
 	discord PurgeDiscordAPI,
 	pool audit.DB,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *PurgeExecutor {
 	if logger == nil {

@@ -41,7 +41,7 @@ func extractRoleTarget(targets []llm.Target) (string, error) {
 	return "", fmt.Errorf("executor: no role target found")
 }
 
-func voiceNotInVoiceText(r *replies.Replies, intent, userID string) string {
+func voiceNotInVoiceText(r replies.Renderer, intent, userID string) string {
 	if r == nil {
 		return fmt.Sprintf("<@%s> isn't connected to voice.", userID)
 	}
@@ -52,7 +52,7 @@ func voiceNotInVoiceText(r *replies.Replies, intent, userID string) string {
 
 func ensureTargetInVoice(
 	api VoiceStateAPI,
-	r *replies.Replies,
+	r replies.Renderer,
 	logger *zap.Logger,
 	intent, guildID, userID string,
 ) error {
@@ -89,7 +89,7 @@ func ensureTargetInVoice(
 	return nil
 }
 
-func replyTextFor(r *replies.Replies, category, key string) *TextResult {
+func replyTextFor(r replies.Renderer, category, key string) *TextResult {
 	if r == nil {
 		return &TextResult{Text: "[" + category + "." + key + "]"}
 	}

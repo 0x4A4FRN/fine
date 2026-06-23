@@ -27,14 +27,14 @@ type UndeafenDiscordAPI interface {
 type UndeafenExecutor struct {
 	discord UndeafenDiscordAPI
 	pool    audit.DB
-	replies *replies.Replies
+	replies replies.Renderer
 	logger  *zap.Logger
 }
 
 func NewUndeafenExecutor(
 	discord UndeafenDiscordAPI,
 	pool audit.DB,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *UndeafenExecutor {
 	if logger == nil {

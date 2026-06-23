@@ -9,12 +9,12 @@ import (
 )
 
 type HelpExecutor struct {
-	replies *replies.Replies
+	replies replies.Renderer
 	logger  *zap.Logger
 }
 
 func NewHelpExecutor(
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *HelpExecutor {
 	if logger == nil {

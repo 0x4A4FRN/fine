@@ -173,7 +173,7 @@ type Router struct {
 	discord           DiscordAPI
 	pool              audit.DB
 	settingsDB        GuildSettingsDB
-	replies           *replies.Replies
+	replies           replies.Renderer
 	settingsSnapshot  *GuildSettingsSnapshot
 	startedAt         time.Time
 	buildInfo         BuildInfo
@@ -231,7 +231,7 @@ func WithSnipeExecutor(store *storage.Store, uploader storage.Uploader) Option {
 func NewRouter(
 	discord DiscordAPI,
 	pool audit.DB,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	startedAt time.Time,
 	opts ...Option,
 ) *Router {
@@ -249,17 +249,14 @@ func NewRouter(
 		r.logger = zap.NewNop()
 	}
 	r.registerExecutors()
-	return r
-}
-
-// StartBackgroundWorkers launches background goroutines owned by the
-// Router's executors (currently only the snipe pagination TTL sweeper).
-// Must be called once after construction (typically from main.go).
-// Call Stop() during shutdown to cancel all goroutines.
-func (r *Router) StartBackgroundWorkers() {
+	// Start the snipe pagination TTL sweeper. The goroutine runs until
+	// Stop() is called (typically during process shutdown). Safe to
+	// call even if snipe is not configured — the executor's Start is
+	// idempotent and the sweeper is a no-op when the pages map is empty.
 	if r.snipeExecutor != nil {
 		r.snipeExecutor.StartPaginationSweeper()
 	}
+	return r
 }
 
 // Stop halts any background goroutines started by the Router's executors

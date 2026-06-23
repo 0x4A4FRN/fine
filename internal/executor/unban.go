@@ -24,14 +24,14 @@ type UnbanDiscordAPI interface {
 type UnbanExecutor struct {
 	discord UnbanDiscordAPI
 	pool    audit.DB
-	replies *replies.Replies
+	replies replies.Renderer
 	logger  *zap.Logger
 }
 
 func NewUnbanExecutor(
 	discord UnbanDiscordAPI,
 	pool audit.DB,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *UnbanExecutor {
 	if logger == nil {

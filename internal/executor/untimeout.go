@@ -25,14 +25,14 @@ type UntimeoutDiscordAPI interface {
 type UntimeoutExecutor struct {
 	discord UntimeoutDiscordAPI
 	pool    audit.DB
-	replies *replies.Replies
+	replies replies.Renderer
 	logger  *zap.Logger
 }
 
 func NewUntimeoutExecutor(
 	discord UntimeoutDiscordAPI,
 	pool audit.DB,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *UntimeoutExecutor {
 	if logger == nil {

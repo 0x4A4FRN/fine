@@ -156,7 +156,7 @@ type Handler struct {
 	store          ConversationStore
 	cacheStore     CacheStore
 	auditDB        audit.DB
-	replies        *replies.Replies
+	replies        replies.Renderer
 	timeoutTracker *timeoutTracker
 	guildSettings  *executor.GuildSettingsSnapshot
 	logger         *zap.Logger
@@ -251,7 +251,7 @@ func WithAuditDB(db audit.DB) Option {
 	}
 }
 
-func WithReplies(r *replies.Replies) Option {
+func WithReplies(r replies.Renderer) Option {
 	return func(h *Handler) {
 		h.replies = r
 	}
@@ -459,15 +459,17 @@ func (h *Handler) HandleMessageCreate(
 // message OR the message is a reply to one of the bot's recent messages.
 // The reply-chain check is bounded by replyWindow (5 minutes).
 func (h *Handler) isMentionedOrReply(m *discordgo.MessageCreate) bool {
-	isMention := isMentioned(m.Mentions, h.BotID())
-	isReply := !isMention && h.isReplyToBot(m.Message)
-	if isMention || isReply {
+	mentioned := isMentioned(m.Mentions, h.BotID())
+	if !mentioned {
+		mentioned = h.isReplyToBot(m.Message)
+	}
+	if mentioned {
 		h.logger.Debug("handler: mention gate passed",
-			zap.Bool("is_mention", isMention),
-			zap.Bool("is_reply_to_bot", isReply),
+			zap.Bool("is_mention", isMentioned(m.Mentions, h.BotID())),
+			zap.Bool("is_reply_to_bot", mentioned && !isMentioned(m.Mentions, h.BotID())),
 		)
 	}
-	return isMention || isReply
+	return mentioned
 }
 
 // handleBareUtilityCommand builds an LLMResponse for a bare utility command

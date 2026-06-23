@@ -25,14 +25,14 @@ type KickDiscordAPI interface {
 type KickExecutor struct {
 	discord KickDiscordAPI
 	pool    audit.DB
-	replies *replies.Replies
+	replies replies.Renderer
 	logger  *zap.Logger
 }
 
 func NewKickExecutor(
 	discord KickDiscordAPI,
 	pool audit.DB,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *KickExecutor {
 	if logger == nil {

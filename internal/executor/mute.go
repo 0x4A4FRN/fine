@@ -27,14 +27,14 @@ type MuteDiscordAPI interface {
 type MuteExecutor struct {
 	discord MuteDiscordAPI
 	pool    audit.DB
-	replies *replies.Replies
+	replies replies.Renderer
 	logger  *zap.Logger
 }
 
 func NewMuteExecutor(
 	discord MuteDiscordAPI,
 	pool audit.DB,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *MuteExecutor {
 	if logger == nil {

@@ -9,12 +9,12 @@ import (
 )
 
 type PingExecutor struct {
-	replies *replies.Replies
+	replies replies.Renderer
 	logger  *zap.Logger
 }
 
 func NewPingExecutor(
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *PingExecutor {
 	if logger == nil {

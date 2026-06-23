@@ -11,6 +11,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Renderer is the interface for reply template rendering. *Replies satisfies
+// it; tests can substitute a mock to verify executor behavior without
+// loading the real YAML file.
+type Renderer interface {
+	Get(category, key string, vars any) string
+	Render(templateName string, data any) (string, error)
+	Has(category, key string) bool
+}
+
+// Compile-time check that *Replies satisfies Renderer.
+var _ Renderer = (*Replies)(nil)
+
 type replyEntry []string
 
 func (r *replyEntry) UnmarshalYAML(node *yaml.Node) error {

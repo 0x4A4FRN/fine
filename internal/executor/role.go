@@ -26,14 +26,14 @@ type RoleDiscordAPI interface {
 type RoleExecutor struct {
 	discord RoleDiscordAPI
 	pool    audit.DB
-	replies *replies.Replies
+	replies replies.Renderer
 	logger  *zap.Logger
 }
 
 func NewRoleExecutor(
 	discord RoleDiscordAPI,
 	pool audit.DB,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *RoleExecutor {
 	if logger == nil {

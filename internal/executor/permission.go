@@ -35,7 +35,7 @@ func highestRolePosition(roles []*discordgo.Role, roleIDs []string) int {
 	return best
 }
 
-func renderReply(r *replies.Replies, category, key string, vars any) string {
+func renderReply(r replies.Renderer, category, key string, vars any) string {
 	if r == nil {
 		return "[" + category + "." + key + "]"
 	}
@@ -67,7 +67,7 @@ func PermissionAdministrator(_ string, guildPerms int64) bool {
 // remains in force.
 func gate(
 	api MemberAPI,
-	r *replies.Replies,
+	r replies.Renderer,
 	permFn permFn,
 	replyCategory string,
 	action Action,
@@ -137,7 +137,7 @@ func gate(
 }
 
 func gateCheckHierarchy(
-	r *replies.Replies,
+	r replies.Renderer,
 	roles []*discordgo.Role,
 	authorRoles []string,
 	targetMember *discordgo.Member,

@@ -12,11 +12,20 @@ import (
 	"github.com/0x4A4FRN/fine/internal/storage"
 )
 
+// StatusDiscordAPI is the narrow set of Discord operations StatusExecutor needs:
+// MemberAPI for the permission gate, BotInfoAPI for the actual operation.
+// Defining it consumer-side lets tests mock only these sub-interfaces
+// instead of the full DiscordAPI composite.
+type StatusDiscordAPI interface {
+	MemberAPI
+	BotInfoAPI
+}
+
 type StatusExecutor struct {
 	discord   BotInfoAPI
 	pool      audit.DB
 	uploader  storage.Uploader
-	replies   *replies.Replies
+	replies   replies.Renderer
 	startedAt time.Time
 	logger    *zap.Logger
 }
@@ -25,7 +34,7 @@ func NewStatusExecutor(
 	discord BotInfoAPI,
 	pool audit.DB,
 	uploader storage.Uploader,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	startedAt time.Time,
 	logger *zap.Logger,
 ) *StatusExecutor {

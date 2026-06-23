@@ -25,14 +25,14 @@ type PinDiscordAPI interface {
 type PinExecutor struct {
 	discord PinDiscordAPI
 	pool    audit.DB
-	replies *replies.Replies
+	replies replies.Renderer
 	logger  *zap.Logger
 }
 
 func NewPinExecutor(
 	discord PinDiscordAPI,
 	pool audit.DB,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *PinExecutor {
 	if logger == nil {

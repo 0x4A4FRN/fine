@@ -28,7 +28,7 @@ type SettingExecutor struct {
 	discord  SettingDiscordAPI
 	pool     GuildSettingsDB
 	snapshot *GuildSettingsSnapshot
-	replies  *replies.Replies
+	replies  replies.Renderer
 	logger   *zap.Logger
 }
 
@@ -36,7 +36,7 @@ func NewSettingExecutor(
 	discord SettingDiscordAPI,
 	pool GuildSettingsDB,
 	snapshot *GuildSettingsSnapshot,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *SettingExecutor {
 	if logger == nil {
@@ -106,7 +106,7 @@ func (e *SettingExecutor) Execute(ctx context.Context, action Action) error {
 }
 
 func renderTemplate(
-	r *replies.Replies, category, key, name string,
+	r replies.Renderer, category, key, name string,
 ) string {
 	if r == nil {
 		return "[" + category + "." + key + "]"

@@ -95,7 +95,7 @@ type SnipeExecutor struct {
 	discord  SnipeDiscordAPI
 	store    SnipeStore
 	uploader storage.Uploader
-	replies  *replies.Replies
+	replies  replies.Renderer
 	logger   *zap.Logger
 
 	// Pagination state (was package-level global; see Finding 1.4/5.2).
@@ -109,7 +109,7 @@ func NewSnipeExecutor(
 	discord SnipeDiscordAPI,
 	store SnipeStore,
 	uploader storage.Uploader,
-	r *replies.Replies,
+	r replies.Renderer,
 	logger *zap.Logger,
 ) *SnipeExecutor {
 	if logger == nil {

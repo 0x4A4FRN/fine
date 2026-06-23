@@ -44,7 +44,7 @@ func Start(
 	ctx context.Context,
 	db DB,
 	editor MessageEditor,
-	r *replies.Replies,
+	r replies.Renderer,
 	logger *zap.Logger,
 ) {
 	if logger == nil {
@@ -67,7 +67,7 @@ func runSweep(
 	ctx context.Context,
 	db DB,
 	editor MessageEditor,
-	r *replies.Replies,
+	r replies.Renderer,
 	logger *zap.Logger,
 ) {
 	if logger == nil {
@@ -151,7 +151,7 @@ func runSweep(
 	}
 }
 
-func buildExpiredText(r *replies.Replies, payload string) string {
+func buildExpiredText(r replies.Renderer, payload string) string {
 	original := extractOriginalConfirmText(payload)
 	if r == nil || original == "" {
 		return fallbackExpiredText
@@ -178,7 +178,7 @@ func SweepOnce(
 	ctx context.Context,
 	db DB,
 	editor MessageEditor,
-	r *replies.Replies,
+	r replies.Renderer,
 	logger *zap.Logger,
 ) {
 	if logger == nil {

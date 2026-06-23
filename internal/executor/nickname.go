@@ -26,14 +26,14 @@ type NicknameDiscordAPI interface {
 type NicknameExecutor struct {
 	discord NicknameDiscordAPI
 	pool    audit.DB
-	replies *replies.Replies
+	replies replies.Renderer
 	logger  *zap.Logger
 }
 
 func NewNicknameExecutor(
 	discord NicknameDiscordAPI,
 	pool audit.DB,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *NicknameExecutor {
 	if logger == nil {

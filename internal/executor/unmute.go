@@ -27,14 +27,14 @@ type UnmuteDiscordAPI interface {
 type UnmuteExecutor struct {
 	discord UnmuteDiscordAPI
 	pool    audit.DB
-	replies *replies.Replies
+	replies replies.Renderer
 	logger  *zap.Logger
 }
 
 func NewUnmuteExecutor(
 	discord UnmuteDiscordAPI,
 	pool audit.DB,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *UnmuteExecutor {
 	if logger == nil {

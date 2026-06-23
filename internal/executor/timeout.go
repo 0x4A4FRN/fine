@@ -25,14 +25,14 @@ type TimeoutDiscordAPI interface {
 type TimeoutExecutor struct {
 	discord TimeoutDiscordAPI
 	pool    audit.DB
-	replies *replies.Replies
+	replies replies.Renderer
 	logger  *zap.Logger
 }
 
 func NewTimeoutExecutor(
 	discord TimeoutDiscordAPI,
 	pool audit.DB,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *TimeoutExecutor {
 	if logger == nil {

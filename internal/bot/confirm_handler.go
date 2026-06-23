@@ -128,11 +128,9 @@ func (h *Handler) handlePendingConfirmation(
 
 		if err := UpdateStatus(ctx, tx, window.ID, "executed"); err != nil {
 			h.logger.Error("handler: updating window status to executed", zap.Error(err))
-			return false // window stays open for retry
 		}
 		if err := tx.Commit(ctx); err != nil {
 			h.logger.Error("handler: committing confirmation tx", zap.Error(err))
-			return false // window stays open for retry
 		}
 
 		if h.store != nil {
@@ -359,7 +357,7 @@ func (h *Handler) handleMultiActionConfirmation(
 		zap.String("source_message_id", m.ID),
 	)
 }
-func buildMultiActionConfirmMessage(resp *llm.LLMResponse, expiresAt time.Time, r *replies.Replies) string {
+func buildMultiActionConfirmMessage(resp *llm.LLMResponse, expiresAt time.Time, r replies.Renderer) string {
 	// Build a human-readable summary of the queued actions for the template.
 	var b strings.Builder
 	for i, a := range resp.Actions {
@@ -485,7 +483,7 @@ func (h *Handler) renderPurgeNothingDeletable(skipped int) string {
 func buildConfirmMessage(
 	resp *llm.LLMResponse,
 	expiresAt time.Time,
-	r *replies.Replies,
+	r replies.Renderer,
 	purgeScan *executor.PurgeScanResult,
 ) string {
 	if resp.Intent == "purge_messages" {

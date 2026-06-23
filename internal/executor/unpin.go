@@ -25,14 +25,14 @@ type UnpinDiscordAPI interface {
 type UnpinExecutor struct {
 	discord UnpinDiscordAPI
 	pool    audit.DB
-	replies *replies.Replies
+	replies replies.Renderer
 	logger  *zap.Logger
 }
 
 func NewUnpinExecutor(
 	discord UnpinDiscordAPI,
 	pool audit.DB,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *UnpinExecutor {
 	if logger == nil {

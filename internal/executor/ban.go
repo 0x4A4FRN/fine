@@ -25,14 +25,14 @@ type BanDiscordAPI interface {
 type BanExecutor struct {
 	discord BanDiscordAPI
 	pool    audit.DB
-	replies *replies.Replies
+	replies replies.Renderer
 	logger  *zap.Logger
 }
 
 func NewBanExecutor(
 	discord BanDiscordAPI,
 	pool audit.DB,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *BanExecutor {
 	if logger == nil {

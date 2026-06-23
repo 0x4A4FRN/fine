@@ -26,14 +26,14 @@ type DeleteMessageDiscordAPI interface {
 type DeleteMessageExecutor struct {
 	discord DeleteMessageDiscordAPI
 	pool    audit.DB
-	replies *replies.Replies
+	replies replies.Renderer
 	logger  *zap.Logger
 }
 
 func NewDeleteMessageExecutor(
 	discord DeleteMessageDiscordAPI,
 	pool audit.DB,
-	replies *replies.Replies,
+	replies replies.Renderer,
 	logger *zap.Logger,
 ) *DeleteMessageExecutor {
 	if logger == nil {
