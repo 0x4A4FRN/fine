@@ -11,21 +11,11 @@ import (
 	"github.com/0x4A4FRN/fine/internal/replies"
 )
 
-type CountUserDB interface {
-	CountDistinctUsers(ctx context.Context) (int, error)
-}
-
-type InfoDiscordAPI interface {
-	MemberAPI
-	BotInfoAPI
-}
-
 type InfoExecutor struct {
 	discord   BotInfoAPI
 	replies   replies.Renderer
 	startedAt time.Time
 	buildInfo BuildInfo
-	store     CountUserDB
 	logger    *zap.Logger
 }
 
@@ -34,7 +24,6 @@ func NewInfoExecutor(
 	replies replies.Renderer,
 	startedAt time.Time,
 	buildInfo BuildInfo,
-	store CountUserDB,
 	logger *zap.Logger,
 ) *InfoExecutor {
 	if logger == nil {
@@ -45,7 +34,6 @@ func NewInfoExecutor(
 		replies:   replies,
 		startedAt: startedAt,
 		buildInfo: buildInfo,
-		store:     store,
 		logger:    logger,
 	}
 }
@@ -55,17 +43,7 @@ func (e *InfoExecutor) Execute(ctx context.Context, _ Action) error {
 
 	uptime := time.Since(e.startedAt).Round(time.Second)
 	guilds := e.discord.GuildCount()
-
-	users := 0
-	if e.store != nil {
-		if n, err := e.store.CountDistinctUsers(ctx); err == nil {
-			users = n
-		} else {
-			e.logger.Warn("executor: info: counting distinct users failed",
-				zap.Error(err),
-			)
-		}
-	}
+	users := e.discord.TotalMemberCount()
 
 	version := e.buildInfo.Version
 	if version == "" {

@@ -139,6 +139,16 @@ func (s *Session) GuildCount() int {
 	return len(s.Session.State.Guilds)
 }
 
+func (s *Session) TotalMemberCount() int {
+	s.Session.State.RLock()
+	defer s.Session.State.RUnlock()
+	total := 0
+	for _, g := range s.Session.State.Guilds {
+		total += g.MemberCount
+	}
+	return total
+}
+
 func (s *Session) GuildMemberVoiceState(
 	guildID, userID string,
 	_ ...discordgo.RequestOption,

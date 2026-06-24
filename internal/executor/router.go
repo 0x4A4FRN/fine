@@ -126,6 +126,7 @@ type VoiceStateAPI interface {
 type BotInfoAPI interface {
 	HeartbeatLatency() time.Duration
 	GuildCount() int
+	TotalMemberCount() int
 }
 
 type DiscordAPI interface {
@@ -151,19 +152,18 @@ type TextResult struct {
 func (t *TextResult) Error() string { return t.Text }
 
 type Router struct {
-	discord           DiscordAPI
-	pool              audit.DB
-	settingsDB        GuildSettingsDB
-	replies           replies.Renderer
-	settingsSnapshot  *GuildSettingsSnapshot
-	startedAt         time.Time
-	buildInfo         BuildInfo
-	userCountProvider CountUserDB
-	logger            *zap.Logger
-	executors         map[string]Executor
-	snipeExecutor     *SnipeExecutor
-	snipeStore        *storage.Store
-	snipeUploader     storage.Uploader
+	discord          DiscordAPI
+	pool             audit.DB
+	settingsDB       GuildSettingsDB
+	replies          replies.Renderer
+	settingsSnapshot *GuildSettingsSnapshot
+	startedAt        time.Time
+	buildInfo        BuildInfo
+	logger           *zap.Logger
+	executors        map[string]Executor
+	snipeExecutor    *SnipeExecutor
+	snipeStore       *storage.Store
+	snipeUploader    storage.Uploader
 }
 
 type BuildInfo struct {
@@ -191,12 +191,6 @@ func WithGuildSettings(snap *GuildSettingsSnapshot, db GuildSettingsDB) Option {
 func WithBuildInfo(b BuildInfo) Option {
 	return func(r *Router) {
 		r.buildInfo = b
-	}
-}
-
-func WithUserCountProvider(fn CountUserDB) Option {
-	return func(r *Router) {
-		r.userCountProvider = fn
 	}
 }
 
@@ -279,7 +273,7 @@ func (r *Router) registerExecutors() {
 		"toggle_setting": NewSettingExecutor(r.discord, r.settingsDB, r.settingsSnapshot, r.replies, r.logger),
 		"ping":           NewPingExecutor(r.replies, r.logger),
 		"help":           NewHelpExecutor(r.replies, r.logger),
-		"info":           NewInfoExecutor(r.discord, r.replies, r.startedAt, r.buildInfo, r.userCountProvider, r.logger),
+		"info":           NewInfoExecutor(r.discord, r.replies, r.startedAt, r.buildInfo, r.logger),
 		"status":         NewStatusExecutor(r.discord, r.pool, r.snipeUploader, r.replies, r.startedAt, r.logger),
 		"snipe":          snipe,
 	}

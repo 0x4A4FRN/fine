@@ -26,3 +26,5 @@ Thumbs.db
 
 *.out
 coverage.txt
+
+*.tar.gz

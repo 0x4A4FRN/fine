@@ -204,7 +204,6 @@ func main() {
 			BuildDate: BuildDate,
 			GoVersion: GoVersionStr,
 		}),
-		executor.WithUserCountProvider(convStore),
 		executor.WithSnipeExecutor(snapshotStore, s3Uploader),
 	)
 	router.StartBackgroundWorkers()
