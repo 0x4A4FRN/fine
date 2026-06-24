@@ -29,11 +29,6 @@ func BuildMessages(
 	return msgs
 }
 
-// ResponseSchema is the JSON Schema definition attached to every LLM call so
-// the model has a concrete contract for the shape of its reply. Pass it as the
-// `schema` argument to Completion / CompletionWithMessages. It is encoded as
-// json.RawMessage so a json.Marshal call inside the provider produces the
-// schema as a real JSON object rather than a zero `{}`.
 var ResponseSchema = json.RawMessage(`{
   "type": "object",
   "additionalProperties": false,

@@ -5,9 +5,6 @@ import (
 	"testing"
 )
 
-// testYAML is the minimal fixture used by most tests.
-// The "slow" key has two variants so TestGet_MultiVariant can
-// assert that one of the valid strings is returned.
 const testYAML = `
 ping:
   pong: "Pong!"
@@ -26,8 +23,6 @@ func mustParse(t *testing.T, data string) *Replies {
 	}
 	return r
 }
-
-// ── parse ──────────────────────────────────────────────────────────────────
 
 func TestParse_ValidYAML(t *testing.T) {
 	r := mustParse(t, testYAML)
@@ -80,8 +75,6 @@ func TestParse_MultiStringVariant(t *testing.T) {
 	}
 }
 
-// ── Get ────────────────────────────────────────────────────────────────────
-
 func TestGet_ExistingKey(t *testing.T) {
 	r := mustParse(t, testYAML)
 	got := r.Get("ping", "pong", nil)
@@ -118,8 +111,6 @@ func TestGet_MultiVariant_ReturnsOneValidOption(t *testing.T) {
 	r := mustParse(t, testYAML)
 	valid := map[string]bool{"Slow…": true, "Really slow.": true}
 
-	// Run enough times that both variants are statistically likely, but just
-	// assert every run returns a valid variant.
 	for i := 0; i < 20; i++ {
 		got := r.Get("ping", "slow", nil)
 		if !valid[got] {
@@ -129,13 +120,11 @@ func TestGet_MultiVariant_ReturnsOneValidOption(t *testing.T) {
 }
 
 func TestGet_RenderError_ReturnsPlaceholder(t *testing.T) {
-	// {{call .Fn}} panics (recovered by text/template as an error) when .Fn
-	// is nil, giving us a reliable Execute failure without needing custom
-	// template functions.
+
 	yaml := "cat:\n  key: \"{{call .Fn}}\"\n"
 	r := mustParse(t, yaml)
 	type data struct{ Fn func() string }
-	got := r.Get("cat", "key", data{Fn: nil}) // nil func → Execute error
+	got := r.Get("cat", "key", data{Fn: nil})
 	if !strings.Contains(got, "cat.key") {
 		t.Fatalf("expected render-error placeholder containing 'cat.key', got %q", got)
 	}
@@ -143,8 +132,6 @@ func TestGet_RenderError_ReturnsPlaceholder(t *testing.T) {
 		t.Fatalf("expected 'render error' in placeholder, got %q", got)
 	}
 }
-
-// ── Render ─────────────────────────────────────────────────────────────────
 
 func TestRender_ValidTemplateName(t *testing.T) {
 	r := mustParse(t, testYAML)
@@ -189,8 +176,6 @@ func TestRender_InvalidName_NoDot_ReturnsError(t *testing.T) {
 	}
 }
 
-// ── Has ────────────────────────────────────────────────────────────────────
-
 func TestHas_ExistingKey(t *testing.T) {
 	r := mustParse(t, testYAML)
 	if !r.Has("ping", "pong") {
@@ -211,8 +196,6 @@ func TestHas_MissingKey(t *testing.T) {
 		t.Fatal("expected false for missing key within existing category")
 	}
 }
-
-// ── splitDot ───────────────────────────────────────────────────────────────
 
 func TestSplitDot_Valid(t *testing.T) {
 	cat, key, ok := splitDot("foo.bar")

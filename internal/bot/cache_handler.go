@@ -86,7 +86,6 @@ func (h *Handler) handleCacheCheck(
 		}
 	}
 
-	// Delegate to the shared dispatch point used by both the LLM and cache paths.
 	h.dispatchModerationResponse(ctx, m, cleaned, resp, nil)
 	return true
 }

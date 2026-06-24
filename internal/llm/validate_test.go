@@ -7,8 +7,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// ptr is a generic helper to take the address of any value — used to
-// construct pointer fields inside LLMResponse and sub-structs inline.
 func ptr[T any](v T) *T { return &v }
 
 func validUserTarget() Target {
@@ -22,8 +20,6 @@ func validRoleTarget() Target {
 func validMessageTarget() Target {
 	return Target{Type: "message", ID: "333333333333333333"}
 }
-
-// ── ValidateLLMResponse ────────────────────────────────────────────────────
 
 func TestValidateLLMResponse_Nil(t *testing.T) {
 	if err := ValidateLLMResponse(nil, nil); err == nil {
@@ -139,8 +135,8 @@ func TestValidateLLMResponse_PurgeFiltersInvalidTargets(t *testing.T) {
 		Confidence: 0.9,
 		Targets: []Target{
 			{Type: "message", ID: "111111111111111111"},
-			{Type: "alien", ID: "222222222222222222"}, // bad type → filtered
-			{Type: "user", ID: "not-a-snowflake"},     // bad ID   → filtered
+			{Type: "alien", ID: "222222222222222222"},
+			{Type: "user", ID: "not-a-snowflake"},
 		},
 	}
 	if err := ValidateLLMResponse(resp, nil); err != nil {
@@ -214,7 +210,7 @@ func TestValidateLLMResponse_AuditLookup_WithTargets_Rejected(t *testing.T) {
 }
 
 func TestValidateLLMResponse_AuditLookup_BrokenQuery_DemotedToChat(t *testing.T) {
-	// No info, no action, no targetID → broken → demoted to chat
+
 	resp := &LLMResponse{
 		Intent:     "audit_lookup",
 		Confidence: 0.9,
@@ -315,8 +311,6 @@ func TestValidateLLMResponse_InvalidTargetSnowflake(t *testing.T) {
 	}
 }
 
-// ── validateParameters ─────────────────────────────────────────────────────
-
 func TestValidateParameters_NilFields_OK(t *testing.T) {
 	if err := validateParameters(Parameters{}); err != nil {
 		t.Fatalf("unexpected error for empty parameters: %v", err)
@@ -372,8 +366,6 @@ func TestValidateParameters_MessageCountBelowOne(t *testing.T) {
 	}
 }
 
-// ── isBrokenAuditLookup ────────────────────────────────────────────────────
-
 func TestIsBrokenAuditLookup_Nil(t *testing.T) {
 	if !isBrokenAuditLookup(nil) {
 		t.Fatal("expected true for nil query")
@@ -428,14 +420,12 @@ func TestIsBrokenAuditLookup_InvalidTargetID_IsBroken(t *testing.T) {
 }
 
 func TestIsBrokenAuditLookup_UnknownAction_IsBroken(t *testing.T) {
-	// Action present but not in suggestedIntents → treated as unusable
+
 	q := &AuditQuery{Info: "actor", Action: ptr("unknown_intent")}
 	if !isBrokenAuditLookup(q) {
 		t.Fatal("expected true: unknown action")
 	}
 }
-
-// ── validateAuditQuery ─────────────────────────────────────────────────────
 
 func TestValidateAuditQuery_NilAction_OK(t *testing.T) {
 	q := &AuditQuery{Info: "actor"}
@@ -445,9 +435,7 @@ func TestValidateAuditQuery_NilAction_OK(t *testing.T) {
 }
 
 func TestValidateAuditQuery_AliasNormalized(t *testing.T) {
-	// logger must be non-nil: validateAuditQuery calls logger.Info on a
-	// successful alias hit, before the nil guard in ValidateLLMResponse
-	// has a chance to run.
+
 	log := zap.NewNop()
 	tests := []struct {
 		alias    string
@@ -506,10 +494,6 @@ func TestValidateAuditQuery_InvalidInfo_Rejected(t *testing.T) {
 	}
 }
 
-// ── filterValidTargets ─────────────────────────────────────────────────────
-// filterValidTargets calls logger.Warn for each dropped target, so a
-// non-nil logger is required whenever any target is expected to be dropped.
-
 func TestFilterValidTargets_DropsBadType(t *testing.T) {
 	targets := []Target{
 		{Type: "user", ID: "111111111111111111"},
@@ -538,7 +522,7 @@ func TestFilterValidTargets_AllValid(t *testing.T) {
 		validRoleTarget(),
 		validMessageTarget(),
 	}
-	// No targets are dropped so the logger is never called; nil is fine here.
+
 	out := filterValidTargets(targets, zap.NewNop())
 	if len(out) != 3 {
 		t.Fatalf("expected 3 targets, got %d", len(out))
@@ -561,8 +545,6 @@ func TestFilterValidTargets_NilInput(t *testing.T) {
 		t.Fatalf("expected 0 targets, got %d", len(out))
 	}
 }
-
-// ── normalizeAuditAction ───────────────────────────────────────────────────
 
 func TestNormalizeAuditAction_CanonicalPassthrough(t *testing.T) {
 	if got := normalizeAuditAction("ban"); got != "ban" {

@@ -22,9 +22,6 @@ var utilityIntents = map[string]bool{
 	"snipe":  true,
 }
 
-// snipeCountRe matches a snipe command with an optional count, e.g.
-// "snipe 3" or "Snipe 25". The bare "snipe" (no count) is handled
-// separately in matchBareUtilityCommand.
 var snipeCountRe = regexp.MustCompile(`(?i)^snipe\s+(\d+)$`)
 
 func matchBareUtilityCommand(cleaned string) string {
@@ -41,15 +38,13 @@ func matchBareUtilityCommand(cleaned string) string {
 	case "snipe":
 		return "snipe"
 	}
-	// Match "snipe <N>" — bare "snipe" is handled by the switch above.
+
 	if snipeCountRe.MatchString(s) {
 		return "snipe"
 	}
 	return ""
 }
 
-// parseSnipeCount extracts the count from a "snipe <N>" command. Returns 1
-// for the bare "snipe" form. The count is clamped to [1, 25].
 func parseSnipeCount(cleaned string) int {
 	m := snipeCountRe.FindStringSubmatch(strings.TrimSpace(cleaned))
 	if len(m) < 2 {

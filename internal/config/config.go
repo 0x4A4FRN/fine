@@ -15,9 +15,6 @@ type Config struct {
 	LogDir   string
 	LogLevel string
 
-	// LogStreamSecret protects the /logs SSE endpoint. If empty, the
-	// endpoint returns 503 (disabled). Set to a random string and pass
-	// as "Authorization: Bearer <secret>" header.
 	LogStreamSecret string
 
 	LLMBaseURL        string
@@ -129,9 +126,6 @@ func envFloatOr(key string, def float64) float64 {
 	return f
 }
 
-// parseAPIKeys splits a comma-separated LLM_API_KEY value into a slice of
-// trimmed, non-empty keys. Returns nil for an empty value so the LLM client
-// works the same as before (no auth header).
 func parseAPIKeys(raw string) []string {
 	if raw == "" {
 		return nil

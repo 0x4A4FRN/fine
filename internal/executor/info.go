@@ -11,17 +11,10 @@ import (
 	"github.com/0x4A4FRN/fine/internal/replies"
 )
 
-// CountUserDB is the narrow slice of conversation.Store that InfoExecutor needs
-// to count distinct users. Defining it here keeps the executor package from
-// pulling in the full conversation store.
 type CountUserDB interface {
 	CountDistinctUsers(ctx context.Context) (int, error)
 }
 
-// InfoDiscordAPI is the narrow set of Discord operations InfoExecutor needs:
-// MemberAPI for the permission gate, BotInfoAPI for the actual operation.
-// Defining it consumer-side lets tests mock only these sub-interfaces
-// instead of the full DiscordAPI composite.
 type InfoDiscordAPI interface {
 	MemberAPI
 	BotInfoAPI

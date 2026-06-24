@@ -125,10 +125,7 @@ func (h *Handler) recordTimeoutTransition(
 			)
 		}
 	case "untimeout":
-		// MarkLifted is left as defensive state; the actual edit-and-forget
-		// happens synchronously in handleTimeoutLift (called from
-		// executeResponseWithMeta). LiftedAt is harmless when set this
-		// way but lets future code paths inspect lift vs natural expiry.
+
 		h.timeoutTracker.MarkLifted(meta.GuildID, userID)
 	}
 }
@@ -215,10 +212,6 @@ func (h *Handler) settleExpiredEntry(guildID, userID, reason string) {
 		return
 	}
 
-	// Pick template based on whether the original lift barely happened.
-	// In normal operation the synchronous untimeout path already settled
-	// and Forgot the entry; this branch is reached only if sync-lift was
-	// bypassed (e.g. messageAPI was nil).
 	useLiftedTemplate := !entry.LiftedAt.IsZero() &&
 		time.Since(entry.LiftedAt) < 5*time.Second
 	var templateKey string
@@ -282,17 +275,6 @@ func (h *Handler) OnGuildMemberUpdate(_ *discordgo.Session, m *discordgo.GuildMe
 		return
 	}
 
-	// Discord's GUILD_MEMBER_UPDATE event payload is unreliable in this
-	// environment: m.Member.CommunicationDisabledUntil can arrive stale
-	// (still showing the timeout as future-dated) even when the timeout
-	// has actually been cleared via the Discord UI. Trusting the event
-	// payload leads to a false-positive "still timed out" and we miss
-	// the M1 edit.
-	//
-	// Verify the actual current state with a REST call. The polling
-	// sweeper is the source of truth for natural expiry, and this
-	// listener now covers UI lifts (and any other way Discord clears
-	// CommunicationDisabledUntil) reliably.
 	if h.discord == nil {
 		h.logger.Warn("handler: GUILD_MEMBER_UPDATE for tracked user; no discord session; cannot verify",
 			zap.String("guild_id", m.GuildID),
@@ -320,9 +302,5 @@ func (h *Handler) OnGuildMemberUpdate(_ *discordgo.Session, m *discordgo.GuildMe
 		return
 	}
 
-	// Delegate to the shared settle path. TrySettle inside
-	// settleExpiredEntry atomically de-duplicates with the polling sweeper,
-	// so the listener is now best-effort acceleration; the sweeper is the
-	// authoritative source of truth for natural expiry.
 	h.settleExpiredEntry(m.GuildID, userID, "member update: timeout cleared")
 }

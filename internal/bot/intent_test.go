@@ -8,8 +8,6 @@ import (
 	"github.com/0x4A4FRN/fine/internal/llm"
 )
 
-// ── matchBareUtilityCommand ────────────────────────────────────────────────
-
 func TestMatchBareUtilityCommand_Canonical(t *testing.T) {
 	tests := []struct {
 		input string
@@ -59,8 +57,7 @@ func TestMatchBareUtilityCommand_SnipeWithCount(t *testing.T) {
 }
 
 func TestMatchBareUtilityCommand_Unknown(t *testing.T) {
-	// None of these should match any utility command.
-	// "snipe 0" is NOT here — it matches (?i)^snipe\s+(\d+)$ and returns "snipe".
+
 	cases := []string{"ban", "kick", "", "snipe abc", "snipe 1 extra", "helpp", "pingping"}
 	for _, c := range cases {
 		if got := matchBareUtilityCommand(c); got != "" {
@@ -68,8 +65,6 @@ func TestMatchBareUtilityCommand_Unknown(t *testing.T) {
 		}
 	}
 }
-
-// ── parseSnipeCount ────────────────────────────────────────────────────────
 
 func TestParseSnipeCount_BareSnipe_ReturnsOne(t *testing.T) {
 	if got := parseSnipeCount("snipe"); got != 1 {
@@ -104,9 +99,7 @@ func TestParseSnipeCount_ClampedToMax(t *testing.T) {
 }
 
 func TestParseSnipeCount_ClampedToMin(t *testing.T) {
-	// "snipe 0" does not match the regex (only \d+ with 1+) but even if
-	// zero slips through, the clamp should enforce minimum of 1.
-	// The regex `\d+` would match "0". Let's verify the clamp:
+
 	if got := parseSnipeCount("snipe 0"); got != 1 {
 		t.Fatalf("expected 1 for count=0, got %d", got)
 	}
@@ -119,8 +112,6 @@ func TestParseSnipeCount_NoMatchReturnsOne(t *testing.T) {
 		}
 	}
 }
-
-// ── isModerationTierIntent ─────────────────────────────────────────────────
 
 func TestIsModerationTierIntent_Destructive(t *testing.T) {
 	destructive := []string{
@@ -159,8 +150,6 @@ func TestIsModerationTierIntent_UtilityIntents(t *testing.T) {
 	}
 }
 
-// ── applyModerationOverride ────────────────────────────────────────────────
-
 func TestApplyModerationOverride_Nil_ReturnsFalse(t *testing.T) {
 	if applyModerationOverride(nil) {
 		t.Fatal("expected false for nil response")
@@ -195,14 +184,12 @@ func TestApplyModerationOverride_NonModerationIntent_NoChange(t *testing.T) {
 }
 
 func TestApplyModerationOverride_DeleteMessage(t *testing.T) {
-	// delete_message is moderation-tier but NOT in destructiveIntents
+
 	resp := &llm.LLMResponse{Intent: "delete_message", IsModeration: false}
 	if !applyModerationOverride(resp) {
 		t.Fatal("expected true for delete_message")
 	}
 }
-
-// ── needsMessageReplyFixup ─────────────────────────────────────────────────
 
 func TestNeedsMessageReplyFixup_True(t *testing.T) {
 	for _, intent := range []string{"pin_message", "unpin_message", "delete_message"} {
@@ -223,8 +210,6 @@ func TestNeedsMessageReplyFixup_False(t *testing.T) {
 		})
 	}
 }
-
-// ── isImplicitDeleteText ───────────────────────────────────────────────────
 
 func TestIsImplicitDeleteText_Triggers(t *testing.T) {
 	cases := []string{"delete", "remove", "trash", "wipe", "erase"}
@@ -263,8 +248,6 @@ func TestIsImplicitDeleteText_False(t *testing.T) {
 	}
 }
 
-// ── patchMessageTargetsFromReply ───────────────────────────────────────────
-
 func TestPatchMessageTargetsFromReply_EmptyReplyID_Unchanged(t *testing.T) {
 	targets := []llm.Target{{Type: "message", ID: "fake"}}
 	got := patchMessageTargetsFromReply(targets, "")
@@ -274,8 +257,7 @@ func TestPatchMessageTargetsFromReply_EmptyReplyID_Unchanged(t *testing.T) {
 }
 
 func TestPatchMessageTargetsFromReply_InvalidSnowflake_Replaced(t *testing.T) {
-	// LLM produced an invalid placeholder snowflake; should be replaced with
-	// the actual reply message ID.
+
 	targets := []llm.Target{{Type: "message", ID: "not-valid"}}
 	replyID := "123456789012345678"
 	got := patchMessageTargetsFromReply(targets, replyID)
@@ -319,8 +301,6 @@ func TestPatchMessageTargetsFromReply_NonMessageTarget_Untouched(t *testing.T) {
 		t.Fatalf("non-message target should not be patched, got %q", got[0].ID)
 	}
 }
-
-// ── extractReplyTargetID ───────────────────────────────────────────────────
 
 func TestExtractReplyTargetID_NilMessage(t *testing.T) {
 	if got := extractReplyTargetID(nil); got != "" {
@@ -368,8 +348,6 @@ func TestExtractReplyTargetID_ValidSnowflake(t *testing.T) {
 		t.Fatalf("expected %q, got %q", validID, got)
 	}
 }
-
-// ── isVoiceClassIntent ─────────────────────────────────────────────────────
 
 func TestIsVoiceClassIntent_True(t *testing.T) {
 	for _, intent := range []string{"mute", "unmute", "deafen", "undeafen"} {

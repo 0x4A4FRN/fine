@@ -3,7 +3,6 @@ package executor
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"go.uber.org/zap"
 
@@ -13,10 +12,6 @@ import (
 	"github.com/0x4A4FRN/fine/internal/replies"
 )
 
-// KickDiscordAPI is the narrow set of Discord operations KickExecutor needs:
-// MemberAPI for the permission gate, KickAPI for the actual operation.
-// Defining it consumer-side lets tests mock only these sub-interfaces
-// instead of the full DiscordAPI composite.
 type KickDiscordAPI interface {
 	MemberAPI
 	KickAPI
@@ -59,10 +54,7 @@ func (e *KickExecutor) Execute(ctx context.Context, action Action) error {
 		return replyTextFor(e.replies, "kick", "no_target")
 	}
 
-	kickPermFn := func(_ string, guildPerms int64) bool {
-		return guildPerms&(discordgo.PermissionKickMembers|discordgo.PermissionAdministrator) != 0
-	}
-	if msg := gate(e.discord, e.replies, kickPermFn, "kick", action, userID, false, false, false); msg != "" {
+	if msg := gate(e.discord, e.replies, discordgo.PermissionKickMembers, "kick", action, userID, false, false, false); msg != "" {
 		return &TextResult{Text: msg}
 	}
 
@@ -74,20 +66,8 @@ func (e *KickExecutor) Execute(ctx context.Context, action Action) error {
 		return fmt.Errorf("executor: kick: %w", err)
 	}
 
-	if err := audit.WriteAction(ctx, e.pool, audit.ModAction{
-		GuildID:         action.GuildID,
-		ChannelID:       action.ChannelID,
-		ActorID:         action.ActorID,
-		TargetID:        userID,
-		TargetType:      "user",
-		Intent:          action.Intent,
-		Reason:          orEmpty(action.Parameters.Reason),
-		Parameters:      auditParameters(action, action.Parameters),
-		SourceMessageID: action.SourceMsgID,
-		ExecutedAt:      time.Now().UTC(),
-	}); err != nil {
-		e.logger.Error("executor: kick: audit write failed", zap.Error(err))
-		return fmt.Errorf("executor: kick: audit write: %w", err)
+	if err := writeAudit(ctx, e.pool, e.logger, action, userID, "user"); err != nil {
+		return err
 	}
 
 	e.logger.Info("executor: kick: executed",
@@ -96,15 +76,9 @@ func (e *KickExecutor) Execute(ctx context.Context, action Action) error {
 	return nil
 }
 
-// PreCheck runs the permission gate without executing the action. Returns ""
-// if allowed, or the denial reply text. Called by the handler before showing
-// the destructive confirmation prompt.
 func (e *KickExecutor) PreCheck(_ context.Context, action Action) string {
 	userID, _ := extractUserTarget(action.Targets)
-	permFn := func(_ string, guildPerms int64) bool {
-		return guildPerms&(discordgo.PermissionKickMembers|discordgo.PermissionAdministrator) != 0
-	}
-	return gate(e.discord, e.replies, permFn, "kick", action, userID, false, false, false)
+	return gate(e.discord, e.replies, discordgo.PermissionKickMembers, "kick", action, userID, false, false, false)
 }
 
 var _ Executor = (*KickExecutor)(nil)

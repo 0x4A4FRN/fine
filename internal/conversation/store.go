@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -33,14 +34,10 @@ func NewStore(db DB, window time.Duration, historyLimit int) *Store {
 	return &Store{db: db, window: window, historyLimit: historyLimit}
 }
 
-// Parameterized SQL constants. The window duration is passed as a parameter
-// ($4 / $5) rather than interpolated via fmt.Sprintf to follow the
-// project's parameterized-query convention and avoid SQL injection patterns.
-
 const selectConversationSQL = `
 SELECT id FROM conversations
 WHERE guild_id = $1 AND channel_id = $2 AND user_id = $3
-  AND last_active_at > NOW() - $4 * INTERVAL '1 minute'
+  AND last_active_at > NOW() - ($4 || ' minutes')::INTERVAL
 ORDER BY last_active_at DESC
 LIMIT 1`
 
@@ -60,7 +57,7 @@ SELECT cm.role, cm.content
 FROM conversation_messages cm
 JOIN conversations c ON c.id = cm.conversation_id
 WHERE c.guild_id = $1 AND c.channel_id = $2 AND c.user_id = $3
-  AND c.last_active_at > NOW() - $4 * INTERVAL '1 minute'
+  AND c.last_active_at > NOW() - ($4 || ' minutes')::INTERVAL
 ORDER BY cm.id DESC
 LIMIT $5`
 
@@ -76,7 +73,7 @@ func (s *Store) WriteMessage(
 		content = content[:assistantTruncateLimit] + "…"
 	}
 
-	minutes := int(s.window.Minutes())
+	minutes := strconv.Itoa(int(s.window.Minutes()))
 	var convID int64
 	err := s.db.QueryRow(
 		ctx,
@@ -125,7 +122,7 @@ func (s *Store) GetHistory(
 	ctx context.Context,
 	guildID, channelID, userID string,
 ) ([]Message, error) {
-	minutes := int(s.window.Minutes())
+	minutes := strconv.Itoa(int(s.window.Minutes()))
 	rows, err := s.db.Query(
 		ctx,
 		selectHistorySQL,
@@ -166,10 +163,6 @@ func (s *Store) GetHistory(
 const countDistinctUsersSQL = `
 SELECT COUNT(DISTINCT user_id) FROM conversations`
 
-// CountDistinctUsers returns the number of unique users who have ever opened a
-// conversation with the bot. Used by the info command; the count is
-// approximate in the sense that bot-only-initiated or short-window dismissals
-// are still counted, but it's a useful ballpark for active-user telemetry.
 func (s *Store) CountDistinctUsers(ctx context.Context) (int, error) {
 	if s == nil || s.db == nil {
 		return 0, nil

@@ -59,8 +59,6 @@ func IsDestructive(intent string) bool {
 	return destructiveIntents[intent]
 }
 
-// confirmWindowDuration is now a configurable field on Handler (see WithConfirmWindowDuration).
-
 type SuggestionWindow struct {
 	ID           int64
 	GuildID      string
@@ -162,13 +160,6 @@ FROM suggestion_windows
 WHERE id = $1
 FOR UPDATE`
 
-// GetWindowByID looks up a confirmation window by its primary key, locking
-// the row for update within a transaction. Used by the button-click
-// confirmation flow (handleConfirmButton) where the window ID is embedded
-// in the button CustomID. The caller must Commit or Rollback the returned
-// transaction.
-//
-// Returns (nil, nil, nil) if no window exists with the given ID.
 func GetWindowByID(
 	ctx context.Context,
 	db WindowDB,

@@ -1,7 +1,7 @@
--- Fine: Initial schema
--- Tables: conversations, conversation_messages, mod_actions, intent_cache, suggestion_windows
 
--- ── Conversations ──────────────────────────────────────────────────────────
+
+
+
 
 CREATE TABLE conversations (
     id              BIGSERIAL PRIMARY KEY,
@@ -15,7 +15,7 @@ CREATE TABLE conversations (
 CREATE INDEX idx_conv_lookup
     ON conversations(guild_id, channel_id, user_id, last_active_at DESC);
 
--- ── Conversation messages ───────────────────────────────────────────────────
+
 
 CREATE TABLE conversation_messages (
     id              BIGSERIAL PRIMARY KEY,
@@ -28,7 +28,7 @@ CREATE TABLE conversation_messages (
 
 CREATE INDEX idx_conv_msgs ON conversation_messages(conversation_id, id);
 
--- ── Mod actions (audit log) ─────────────────────────────────────────────────
+
 
 CREATE TABLE mod_actions (
     id                  BIGSERIAL PRIMARY KEY,
@@ -39,9 +39,9 @@ CREATE TABLE mod_actions (
     target_type         TEXT NOT NULL,
     intent              TEXT NOT NULL,
     reason              TEXT,
-    parameters          TEXT,                      -- JSON: {duration, messageCount, ...}
+    parameters          TEXT,                      
     source_message_id   TEXT,
-    confirmed_at        TIMESTAMPTZ,               -- null for non-destructive
+    confirmed_at        TIMESTAMPTZ,               
     executed_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -49,7 +49,7 @@ CREATE INDEX idx_mod_actions_target ON mod_actions(guild_id, target_id, executed
 CREATE INDEX idx_mod_actions_actor  ON mod_actions(guild_id, actor_id,  executed_at DESC);
 CREATE INDEX idx_mod_actions_intent ON mod_actions(guild_id, intent,    executed_at DESC);
 
--- ── Intent cache ────────────────────────────────────────────────────────────
+
 
 CREATE TABLE intent_cache (
     guild_id     TEXT NOT NULL,
@@ -64,7 +64,7 @@ CREATE TABLE intent_cache (
     PRIMARY KEY (guild_id, template)
 );
 
--- ── Suggestion windows (confirm flow) ───────────────────────────────────────
+
 
 CREATE TABLE suggestion_windows (
     id              BIGSERIAL PRIMARY KEY,
@@ -73,7 +73,7 @@ CREATE TABLE suggestion_windows (
     user_id         TEXT NOT NULL,
     status          TEXT NOT NULL CHECK (status IN ('open', 'expired', 'cancelled', 'executed')),
     bot_message_id  TEXT NOT NULL,
-    payload         TEXT NOT NULL,                 -- Full JSON LLM response
+    payload         TEXT NOT NULL,                 
     expires_at      TIMESTAMPTZ NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -81,10 +81,10 @@ CREATE TABLE suggestion_windows (
 CREATE INDEX idx_suggest_lookup  ON suggestion_windows(channel_id, user_id, status);
 CREATE INDEX idx_suggest_bot_msg ON suggestion_windows(bot_message_id);
 
--- ── Guild settings ──────────────────────────────────────────────────────────
--- One row per guild. Hydrated into a process-local snapshot on startup; toggles
--- write through to the DB and refresh the same snapshot so subsequent requests
--- see the change without waiting for a restart.
+
+
+
+
 
 CREATE TABLE guild_settings (
     guild_id      TEXT PRIMARY KEY,

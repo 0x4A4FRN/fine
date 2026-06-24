@@ -12,15 +12,8 @@ import (
 	"github.com/0x4A4FRN/fine/internal/executor"
 )
 
-// interactionTimeout bounds how long a button-click handler may run.
-// Matches handlerTimeout in handler.go — interactions are scoped to the
-// same per-event deadline so a stalled downstream call (S3 presign, DB
-// query) cannot block the interaction handler goroutine indefinitely.
 const interactionTimeout = 30 * time.Second
 
-// HandleInteractionCreate dispatches Discord interaction events (button
-// clicks) to the appropriate handler. It handles both snipe pagination
-// buttons and confirmation yes/no buttons.
 func (h *Handler) HandleInteractionCreate(_ *discordgo.Session, i *discordgo.InteractionCreate) {
 	if h.logger == nil {
 		return
@@ -41,7 +34,6 @@ func (h *Handler) HandleInteractionCreate(_ *discordgo.Session, i *discordgo.Int
 		zap.String("channel_id", i.ChannelID),
 	)
 
-	// Dispatch snipe buttons.
 	if prefix, _, ok := parseSnipeCustomID(customID); ok {
 		switch prefix {
 		case "snipe_prev":
@@ -54,7 +46,6 @@ func (h *Handler) HandleInteractionCreate(_ *discordgo.Session, i *discordgo.Int
 		return
 	}
 
-	// Dispatch confirmation buttons.
 	if prefix, _, ok := parseConfirmCustomID(customID); ok {
 		switch prefix {
 		case "confirm_yes":
@@ -70,27 +61,12 @@ func (h *Handler) HandleInteractionCreate(_ *discordgo.Session, i *discordgo.Int
 	)
 }
 
-// handleSnipePagination handles prev/next button clicks on snipe messages.
-// It looks up the in-memory page state (keyed by the bot message ID embedded
-// in the button CustomID), navigates to the adjacent snapshot, and updates
-// the interaction message in place via InteractionResponseUpdateMessage.
-//
-// With in-memory pagination and boundary-disabled buttons, the snap == nil
-// case should never be reached from a button click (buttons are disabled at
-// boundaries). It can still happen if the page state has expired (TTL) or
-// was never stored. In that case we acknowledge with a deferred update so
-// the interaction doesn't error out, and leave the message content as-is.
-//
-// A 30-second context timeout is applied so a stalled S3 presign call
-// (or any other downstream slowness in the snipe renderer) cannot block
-// the interaction handler indefinitely.
 func (h *Handler) handleSnipePagination(i *discordgo.InteractionCreate, direction string) {
 	if h.snipePaginationFn == nil {
 		h.respondInteraction(i, h.interactionText("snipe_not_configured"))
 		return
 	}
 
-	// Parse the bot message ID from the custom ID.
 	_, botMsgID, ok := parseSnipeCustomID(i.MessageComponentData().CustomID)
 	if !ok {
 		h.respondInteraction(i, h.interactionText("invalid_button"))
@@ -102,17 +78,13 @@ func (h *Handler) handleSnipePagination(i *discordgo.InteractionCreate, directio
 
 	snap, text, components := h.snipePaginationFn(ctx, botMsgID, direction)
 	if snap == nil {
-		// State expired or unexpected boundary — acknowledge with a deferred
-		// update so the interaction doesn't error, and leave the message as-is.
-		// This is the safety net for the case where the in-memory page state
-		// has been evicted (e.g. bot restarted, or TTL expired).
+
 		_ = h.discord.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseDeferredMessageUpdate,
 		})
 		return
 	}
 
-	// Update the message with the new snapshot content.
 	_ = h.discord.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseUpdateMessage,
 		Data: &discordgo.InteractionResponseData{
@@ -122,10 +94,6 @@ func (h *Handler) handleSnipePagination(i *discordgo.InteractionCreate, directio
 	})
 }
 
-// handleSnipeDelete handles the "Delete" button on snipe messages by
-// deleting the bot's snipe message AND the original invoking user message
-// (the "snipe 3" command). This keeps the channel clean — no trace of the
-// snipe invocation remains after the mod dismisses the result.
 func (h *Handler) handleSnipeDelete(i *discordgo.InteractionCreate) {
 	if h.discord == nil {
 		return
@@ -133,19 +101,16 @@ func (h *Handler) handleSnipeDelete(i *discordgo.InteractionCreate) {
 
 	botMsgID := i.Message.ID
 
-	// Acknowledge the interaction first, then delete the messages.
 	_ = h.discord.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredMessageUpdate,
 	})
 
-	// Delete the bot's snipe message.
 	if err := h.discord.ChannelMessageDelete(i.ChannelID, botMsgID); err != nil {
 		h.logger.Error("handler: interaction: snipe delete failed (bot message)",
 			zap.String("message_id", botMsgID),
 			zap.Error(err),
 		)
-		// Continue — we still want to try deleting the source message and
-		// cleaning up page state.
+
 	} else {
 		h.logger.Info("handler: interaction: snipe bot message deleted",
 			zap.String("message_id", botMsgID),
@@ -153,9 +118,6 @@ func (h *Handler) handleSnipeDelete(i *discordgo.InteractionCreate) {
 		)
 	}
 
-	// Delete the original invoking user message (e.g. "snipe 3") so the
-	// channel doesn't show a dangling command after the result is dismissed.
-	// Best-effort — ignore errors (message may already be gone).
 	if h.snipeSourceMsgIDFn != nil {
 		if sourceMsgID := h.snipeSourceMsgIDFn(botMsgID); sourceMsgID != "" {
 			if err := h.discord.ChannelMessageDelete(i.ChannelID, sourceMsgID); err != nil {
@@ -172,19 +134,11 @@ func (h *Handler) handleSnipeDelete(i *discordgo.InteractionCreate) {
 		}
 	}
 
-	// Clean up the in-memory page state immediately rather than waiting
-	// for TTL expiry.
 	if h.snipeDeletePageFn != nil {
 		h.snipeDeletePageFn(botMsgID)
 	}
 }
 
-// handleConfirmButton processes yes/no confirmation buttons. It mirrors
-// the text-based confirmation flow but is triggered via button click.
-// The "no" branch cancels the window immediately. The "yes" branch defers
-// the interaction update, then looks up the window, executes the queued
-// action, updates the window status to "executed", and edits the
-// confirmation message to "Done".
 func (h *Handler) handleConfirmButton(i *discordgo.InteractionCreate, confirmed bool) {
 	if h.windowDB == nil || h.discord == nil {
 		return
@@ -206,9 +160,6 @@ func (h *Handler) handleConfirmButton(i *discordgo.InteractionCreate, confirmed 
 		return
 	}
 
-	// "Yes" — defer the interaction update so Discord doesn't time out
-	// while we look up the window and execute the action. The actual
-	// message edit (to "Done" or an error) happens after execution.
 	_ = h.discord.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredMessageUpdate,
 	})
@@ -216,8 +167,6 @@ func (h *Handler) handleConfirmButton(i *discordgo.InteractionCreate, confirmed 
 	h.handleConfirmYesButton(i, windowID, clickerID)
 }
 
-// handleConfirmNoButton cancels the confirmation window and edits the
-// message to show the cancellation. Only the original requester may cancel.
 func (h *Handler) handleConfirmNoButton(i *discordgo.InteractionCreate, windowID int64, clickerID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), interactionTimeout)
 	defer cancel()
@@ -237,13 +186,11 @@ func (h *Handler) handleConfirmNoButton(i *discordgo.InteractionCreate, windowID
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// Only the original requester may cancel.
 	if clickerID != "" && window.UserID != clickerID {
 		h.respondInteraction(i, h.interactionText("not_original_requester"))
 		return
 	}
 
-	// If the window is no longer open, it was already resolved.
 	if window.Status != "open" {
 		h.respondInteraction(i, h.interactionText("already_resolved"))
 		return
@@ -255,7 +202,7 @@ func (h *Handler) handleConfirmNoButton(i *discordgo.InteractionCreate, windowID
 			zap.Error(err),
 		)
 		h.respondInteraction(i, h.interactionText("cancel_failed"))
-		return // deferred tx.Rollback fires; window stays "open"
+		return
 	}
 	if err := tx.Commit(ctx); err != nil {
 		h.logger.Error("handler: interaction: committing cancel tx",
@@ -278,9 +225,6 @@ func (h *Handler) handleConfirmNoButton(i *discordgo.InteractionCreate, windowID
 	)
 }
 
-// handleConfirmYesButton executes the queued action after a "Yes" button
-// click. The interaction was already deferred by the caller; this function
-// does the window lookup, execution, status update, and message edit.
 func (h *Handler) handleConfirmYesButton(i *discordgo.InteractionCreate, windowID int64, clickerID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), interactionTimeout)
 	defer cancel()
@@ -301,7 +245,6 @@ func (h *Handler) handleConfirmYesButton(i *discordgo.InteractionCreate, windowI
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// Only the original requester may confirm.
 	if clickerID != "" && window.UserID != clickerID {
 		h.logger.Info("handler: interaction: confirm yes: rejected (not original requester)",
 			zap.Int64("window_id", windowID),
@@ -312,8 +255,6 @@ func (h *Handler) handleConfirmYesButton(i *discordgo.InteractionCreate, windowI
 		return
 	}
 
-	// If the window is no longer open, it was already resolved (e.g. by
-	// a text-based "yes" that arrived first, or by another button click).
 	if window.Status != "open" {
 		h.logger.Info("handler: interaction: confirm yes: window already resolved",
 			zap.Int64("window_id", windowID),
@@ -322,7 +263,6 @@ func (h *Handler) handleConfirmYesButton(i *discordgo.InteractionCreate, windowI
 		return
 	}
 
-	// Deserialize the payload to recover the queued LLM response.
 	var wp WindowPayload
 	if err := json.Unmarshal([]byte(window.Payload), &wp); err != nil {
 		h.logger.Error("handler: interaction: confirm yes: deserializing payload",
@@ -334,6 +274,7 @@ func (h *Handler) handleConfirmYesButton(i *discordgo.InteractionCreate, windowI
 				zap.Int64("window_id", windowID),
 				zap.Error(err),
 			)
+			return
 		}
 		if err := tx.Commit(ctx); err != nil {
 			h.logger.Error("handler: interaction: committing tx", zap.Error(err))
@@ -349,6 +290,7 @@ func (h *Handler) handleConfirmYesButton(i *discordgo.InteractionCreate, windowI
 				zap.Int64("window_id", windowID),
 				zap.Error(err),
 			)
+			return
 		}
 		if err := tx.Commit(ctx); err != nil {
 			h.logger.Error("handler: interaction: committing tx", zap.Error(err))
@@ -363,10 +305,6 @@ func (h *Handler) handleConfirmYesButton(i *discordgo.InteractionCreate, windowI
 		zap.String("user_id", clickerID),
 	)
 
-	// Build the ActionMeta from the window + interaction context.
-	// UserReplyMessageID is empty because the button flow has no separate
-	// user reply message — the user clicked a button on the confirmation
-	// prompt itself.
 	guildID := i.GuildID
 	if guildID == "" {
 		guildID = window.GuildID
@@ -382,16 +320,10 @@ func (h *Handler) handleConfirmYesButton(i *discordgo.InteractionCreate, windowI
 	verbose := h.guildSettingsVerbose(guildID)
 	succeeded := h.executeResponseWithMeta(ctx, wp.Response, meta, verbose, nil)
 
-	// After execution, clean up the confirmation prompt. For the button
-	// flow there's no separate user "yes" message (the user clicked a
-	// button on the confirmation itself). Purge is the exception — its
-	// executor handles its own cleanup so bystanders see the
-	// confirmation while messages are disappearing.
 	if succeeded {
 		h.cleanupConfirmationAfterExecute(meta, wp.Response.Intent)
 	}
 
-	// Mark the window as executed (or cancelled if execution failed).
 	status := "executed"
 	if !succeeded {
 		status = "cancelled"
@@ -402,7 +334,7 @@ func (h *Handler) handleConfirmYesButton(i *discordgo.InteractionCreate, windowI
 			zap.String("status", status),
 			zap.Error(err),
 		)
-		return // deferred tx.Rollback fires; window stays "open"
+		return
 	}
 	if err := tx.Commit(ctx); err != nil {
 		h.logger.Error("handler: interaction: committing tx",
@@ -412,8 +344,6 @@ func (h *Handler) handleConfirmYesButton(i *discordgo.InteractionCreate, windowI
 		return
 	}
 
-	// Write the assistant outcome to the conversation store for future
-	// LLM context.
 	if h.store != nil && succeeded {
 		h.writeAssistantMessage(ctx, &discordgo.MessageCreate{
 			Message: &discordgo.Message{
@@ -432,8 +362,6 @@ func (h *Handler) handleConfirmYesButton(i *discordgo.InteractionCreate, windowI
 	)
 }
 
-// respondInteraction is a helper that acknowledges an interaction with a
-// simple ephemeral message when the interaction hasn't been responded to yet.
 func (h *Handler) respondInteraction(i *discordgo.InteractionCreate, message string) {
 	if h.discord == nil {
 		return
@@ -447,9 +375,6 @@ func (h *Handler) respondInteraction(i *discordgo.InteractionCreate, message str
 	})
 }
 
-// interactionText fetches a user-facing string from the interaction
-// category in replies.yaml. Falls back to a generic bracket string if
-// replies is nil or the key doesn't exist.
 func (h *Handler) interactionText(key string) string {
 	if h.replies == nil {
 		return "[interaction." + key + "]"
@@ -457,9 +382,6 @@ func (h *Handler) interactionText(key string) string {
 	return h.replies.Get("interaction", key, nil)
 }
 
-// BuildConfirmButtonComponents returns the Discord action row with
-// Yes/No confirmation buttons for use in destructive and multi-action
-// confirmation messages.
 func BuildConfirmButtonComponents(windowID int64) []discordgo.MessageComponent {
 	return []discordgo.MessageComponent{
 		discordgo.ActionsRow{

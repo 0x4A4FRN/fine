@@ -131,10 +131,7 @@ func runSweep(
 
 	if len(windows) > 0 {
 		if failedCount > 0 {
-			// Warn-level summary so operators can alert on sweep failure
-			// rates. A 100% failure rate over multiple cycles indicates a
-			// sustained DB connection issue that would otherwise be visible
-			// only by aggregating per-window ERROR lines.
+
 			logger.Warn("sweep: expired windows processed with failures",
 				zap.Int("total", len(windows)),
 				zap.Int("succeeded", len(windows)-failedCount),

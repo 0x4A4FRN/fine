@@ -48,10 +48,6 @@ func (r *LLMResponse) UnmarshalJSON(data []byte) error {
 	r.AuditQuery = aux.AuditQuery
 	r.Targets = coerceTargets(aux.TargetsRaw, aux.Intent)
 
-	// Defensive: when the LLM emits an empty auditQuery object {} for a
-	// non-audit intent (some models do this reflexively), drop it so the
-	// validator's "non-audit must not have auditQuery" check doesn't reject
-	// otherwise valid responses.
 	if r.AuditQuery != nil && r.Intent != "audit_lookup" && isEmptyAuditQuery(r.AuditQuery) {
 		r.AuditQuery = nil
 	}

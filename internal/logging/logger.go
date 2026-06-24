@@ -30,10 +30,6 @@ func NewDevelopment(level zapcore.Level) (*zap.Logger, error) {
 	return cfg.Build()
 }
 
-// NewDevelopmentWithLogDir creates a development logger that also tee-writes
-// JSON-encoded logs to a file in dir. If dir is empty, behaves identically to
-// NewDevelopment. If broadcaster is non-nil, log lines are also fanned out
-// to SSE subscribers for live log streaming.
 func NewDevelopmentWithLogDir(level zapcore.Level, dir string, broadcaster *LogBroadcaster) (*zap.Logger, error) {
 	if dir == "" && broadcaster == nil {
 		return NewDevelopment(level)
@@ -41,14 +37,12 @@ func NewDevelopmentWithLogDir(level zapcore.Level, dir string, broadcaster *LogB
 
 	var cores []zapcore.Core
 
-	// Always include the development (console) logger.
 	devLogger, err := NewDevelopment(level)
 	if err != nil {
 		return nil, err
 	}
 	cores = append(cores, devLogger.Core())
 
-	// Optional file output (JSON).
 	if dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, fmt.Errorf("logging: creating log dir %q: %w", dir, err)
@@ -62,7 +56,6 @@ func NewDevelopmentWithLogDir(level zapcore.Level, dir string, broadcaster *LogB
 		))
 	}
 
-	// Optional SSE broadcaster (JSON, same as file).
 	if broadcaster != nil {
 		broadcastCfg := zap.NewProductionEncoderConfig()
 		broadcastCfg.TimeKey = "ts"
@@ -78,12 +71,6 @@ func NewDevelopmentWithLogDir(level zapcore.Level, dir string, broadcaster *LogB
 	return zap.New(zapcore.NewTee(cores...)), nil
 }
 
-// syncFileWriter is a write-syncer that opens a file for appending and
-// writes to it. It does not buffer. A mutex guards the lazy file
-// initialization and all writes to prevent data races when multiple zap
-// cores write concurrently. Without the mutex, two goroutines could both
-// observe w.f == nil, both call os.OpenFile (leaking one FD), and
-// interleave writes (corrupting the JSON log file).
 type syncFileWriter struct {
 	mu   sync.Mutex
 	path string

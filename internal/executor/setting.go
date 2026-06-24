@@ -16,10 +16,6 @@ type GuildSettingsDB interface {
 	UpsertGuildSettings(ctx context.Context, gs GuildSettings) error
 }
 
-// SettingDiscordAPI is the narrow set of Discord operations SettingExecutor needs:
-// MemberAPI for the permission gate.
-// Defining it consumer-side lets tests mock only these sub-interfaces
-// instead of the full DiscordAPI composite.
 type SettingDiscordAPI interface {
 	MemberAPI
 }
@@ -56,11 +52,6 @@ func (e *SettingExecutor) Execute(ctx context.Context, action Action) error {
 		zap.String("guild_id", action.GuildID),
 	)
 
-	// Custom permission check instead of gate() because the setting
-	// no_permission template uses {{.setting}} which gate() can't fill
-	// (gate renders with nil vars). We resolve the setting label from
-	// action.Parameters.Setting so the denial message says "Sudo Mode"
-	// instead of "<no value>".
 	if msg := e.checkPermission(action); msg != "" {
 		return &TextResult{Text: msg}
 	}
@@ -116,9 +107,6 @@ func renderTemplate(
 	})
 }
 
-// checkPermission verifies the actor has Administrator. The denial reply
-// includes the setting label (e.g. "Sudo Mode") so the user sees a
-// meaningful name instead of the raw key or "<no value>".
 func (e *SettingExecutor) checkPermission(action Action) string {
 	authorMember, err := e.discord.GuildMember(action.GuildID, action.ActorID)
 	if err != nil || authorMember == nil {
@@ -141,17 +129,11 @@ func (e *SettingExecutor) checkPermission(action Action) string {
 	return ""
 }
 
-// settingDisplay maps the machine-readable internal setting key to a friendly
-// label that we hand to YAML templates for user-facing rendering. Internal
-// keys (`verbose_error`, `sudo_mode`) stay stable everywhere they're stored,
-// parsed, or constrained by JSON Schema; only the rendered text changes.
 var settingDisplay = map[string]string{
 	"verbose_error": "Verbose Error Logging",
 	"sudo_mode":     "Sudo Mode",
 }
 
-// settingLabel returns the friendly label for a known setting, falling back to
-// the raw key for unknown inputs so error replies don't lose information.
 func settingLabel(key string) string {
 	if v, ok := settingDisplay[key]; ok {
 		return v

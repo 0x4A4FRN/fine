@@ -3,7 +3,6 @@ package executor
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"go.uber.org/zap"
 
@@ -13,10 +12,6 @@ import (
 	"github.com/0x4A4FRN/fine/internal/replies"
 )
 
-// UnpinDiscordAPI is the narrow set of Discord operations UnpinExecutor needs:
-// MemberAPI for the permission gate, PinAPI for the actual operation.
-// Defining it consumer-side lets tests mock only these sub-interfaces
-// instead of the full DiscordAPI composite.
 type UnpinDiscordAPI interface {
 	MemberAPI
 	PinAPI
@@ -59,10 +54,7 @@ func (e *UnpinExecutor) Execute(ctx context.Context, action Action) error {
 		return replyTextFor(e.replies, "unpin", "no_message")
 	}
 
-	unpinPermFn := func(_ string, guildPerms int64) bool {
-		return guildPerms&(discordgo.PermissionManageMessages|discordgo.PermissionAdministrator) != 0
-	}
-	if msg := gate(e.discord, e.replies, unpinPermFn, "unpin", action, messageID, true, false, false); msg != "" {
+	if msg := gate(e.discord, e.replies, discordgo.PermissionManageMessages, "unpin", action, messageID, true, false, false); msg != "" {
 		return &TextResult{Text: msg}
 	}
 
@@ -76,20 +68,8 @@ func (e *UnpinExecutor) Execute(ctx context.Context, action Action) error {
 		return fmt.Errorf("executor: unpin_message: %w", err)
 	}
 
-	if err := audit.WriteAction(ctx, e.pool, audit.ModAction{
-		GuildID:         action.GuildID,
-		ChannelID:       action.ChannelID,
-		ActorID:         action.ActorID,
-		TargetID:        messageID,
-		TargetType:      "message",
-		Intent:          action.Intent,
-		Reason:          orEmpty(action.Parameters.Reason),
-		Parameters:      auditParameters(action, action.Parameters),
-		SourceMessageID: action.SourceMsgID,
-		ExecutedAt:      time.Now().UTC(),
-	}); err != nil {
-		e.logger.Error("executor: unpin: audit write failed", zap.Error(err))
-		return fmt.Errorf("executor: unpin_message: audit write: %w", err)
+	if err := writeAudit(ctx, e.pool, e.logger, action, messageID, "message"); err != nil {
+		return err
 	}
 
 	e.logger.Info("executor: unpin: executed",

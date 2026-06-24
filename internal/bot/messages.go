@@ -44,9 +44,6 @@ type MessageDeleter interface {
 	) error
 }
 
-// DiscordMessageAPI is the composite for handlers that need all message
-// operations. The split into MessageSender/MessageEditor/MessageFetcher/
-// MessageDeleter helps with testing individual operations in isolation.
 type DiscordMessageAPI interface {
 	MessageSender
 	MessageEditor
@@ -125,11 +122,6 @@ func stripMention(content, botID string) string {
 	return strings.TrimSpace(content)
 }
 
-// editOrSend tries to edit the existing bot message identified by
-// botMessageID in channelID to the given text. If the edit fails (or there is
-// no botMessageID to edit), it falls back to a fresh ChannelMessageSend and
-// returns the new message ID. Returns "" when no message API is configured or
-// both operations fail.
 func (h *Handler) editOrSend(channelID, botMessageID, text string) string {
 	if botMessageID != "" && h.messageAPI != nil {
 		if _, err := h.messageAPI.ChannelMessageEdit(channelID, botMessageID, text); err == nil {

@@ -27,8 +27,6 @@ import (
 	"github.com/0x4A4FRN/fine/internal/web"
 )
 
-// Build metadata. These are injected at build time via -ldflags -X in the
-// Makefile; defaults reflect a `go build` (no ldflags) local build.
 var (
 	Version      = "dev"
 	Commit       = "xxxxxxx"
@@ -69,8 +67,6 @@ func main() {
 
 	lvl, _ := logging.ParseLevel(cfg.LogLevel)
 
-	// Create a log broadcaster for live log streaming via /logs SSE.
-	// Only active when LOG_STREAM_SECRET is set.
 	var logBroadcaster *logging.LogBroadcaster
 	if cfg.LogStreamSecret != "" {
 		logBroadcaster = logging.NewLogBroadcaster()
@@ -169,7 +165,6 @@ func main() {
 		zap.Int("guild_count", len(loaded)),
 	)
 
-	// ── Storage: S3 uploader (optional) + snapshot store ──────
 	var s3Uploader storage.Uploader
 	if cfg.S3Bucket != "" && cfg.S3Endpoint != "" {
 		s3Cfg := storage.S3Config{
@@ -194,7 +189,6 @@ func main() {
 
 	snapshotStore := storage.NewStore(pool)
 
-	// ── Router + Snipe executor ─────────────────────────────────
 	router := executor.NewRouter(
 		discordAPI,
 		pool,
@@ -263,15 +257,10 @@ func main() {
 
 	go sweep.Start(ctx, pool, session, replyRenderer, logger)
 
-	// Polling timer for natural timeout expiry. The GuildMemberUpdate
-	// listener is best-effort; this ticker is the authoritative source
-	// for "this user's timeout has elapsed" and edits the original
-	// timeout-grant message accordingly.
 	go handler.StartTimeoutExpirySweep(ctx, 30*time.Second)
 
 	go web.Serve(ctx, ":8080", logger, logBroadcaster, cfg.LogStreamSecret)
 
-	// Daily retention sweepers — consolidated into one goroutine.
 	go func() {
 		ticker := time.NewTicker(24 * time.Hour)
 		defer ticker.Stop()
@@ -293,13 +282,9 @@ func main() {
 
 	logger.Info("main: shutting down...")
 
-	// Stop background goroutines owned by the router (snipe pagination
-	// TTL sweeper). The Discord session and DB pool are closed by their
-	// respective defers.
 	router.Stop()
 }
 
-// retentionSweep runs all daily retention sweeps in sequence.
 func retentionSweep(ctx context.Context, pool *db.Pool, snapshotStore *storage.Store, cfg *config.Config, logger *zap.Logger) {
 	sweeps := []struct {
 		label string
@@ -332,7 +317,7 @@ func retentionSweep(ctx context.Context, pool *db.Pool, snapshotStore *storage.S
 			logger.Error("main: retention sweep failed", zap.String("table", s.label), zap.Error(err))
 		}
 	}
-	// Snipe retention uses a different API (returns count).
+
 	deleted, err := snapshotStore.SweepRetention(ctx, cfg.SnipeRetentionDays)
 	if err != nil {
 		logger.Error("main: snipe retention", zap.Error(err))
@@ -345,9 +330,6 @@ var _ audit.DB = (*db.Pool)(nil)
 
 type guildSettingsDBAdapter struct{ inner *db.Pool }
 
-// UpsertGuildSettings converts executor.GuildSettings → db.GuildSettings and
-// hands off to the underlying pool. Lives here at the seam so executor and db
-// stay isolated at the type level.
 func (a guildSettingsDBAdapter) UpsertGuildSettings(
 	ctx context.Context, gs executor.GuildSettings,
 ) error {

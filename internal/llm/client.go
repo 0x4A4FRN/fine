@@ -113,9 +113,6 @@ func NewOpenAIClient(opts ...Option) *OpenAIClient {
 
 var _ Provider = (*OpenAIClient)(nil)
 
-// currentAPIKey returns the active API key, rotating to the next key every
-// keyRotate requests when multiple keys are configured. For a single key
-// (or no keys) the mutex is not acquired — the fast path is lock-free.
 func (c *OpenAIClient) currentAPIKey() string {
 	if len(c.apiKeys) == 0 {
 		return ""
@@ -138,7 +135,6 @@ func (c *OpenAIClient) currentAPIKey() string {
 	return key
 }
 
-// rotateKeyOn429 advances to the next key immediately after a 429 response.
 func (c *OpenAIClient) rotateKeyOn429() {
 	if len(c.apiKeys) <= 1 {
 		return
@@ -152,11 +148,6 @@ func (c *OpenAIClient) rotateKeyOn429() {
 	)
 }
 
-// doWithRetry executes a POST to the chat completions endpoint, recreating the
-// request each attempt (the request body is consumed by each Do call). It
-// retries on transport errors and 5xx responses with exponential backoff
-// (1s, 2s, 4s, …). On 429, the API key is rotated before retrying. 4xx
-// responses (other than 429) are returned immediately without retry.
 func (c *OpenAIClient) doWithRetry(
 	ctx context.Context,
 	bodyBytes []byte,
@@ -195,14 +186,7 @@ func (c *OpenAIClient) doWithRetry(
 				zap.Duration("backoff", backoff),
 				zap.Error(err),
 			)
-			// Context-aware sleep: if the caller's context is
-			// canceled (e.g. handler timeout expired), abort
-			// immediately instead of sleeping through the
-			// backoff and then failing on the next attempt.
-			// This prevents the retry loop from outliving the
-			// handler and sending stale replies to messages
-			// that have already been answered by a newer
-			// handler invocation.
+
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -210,12 +194,7 @@ func (c *OpenAIClient) doWithRetry(
 			}
 			continue
 		}
-		// Final attempt failed. If we're returning with both a non-nil
-		// response AND a non-nil error (the rare transport-error-with-
-		// response case, e.g. redirect failures), close the body now —
-		// the caller's `if err != nil { return }` path will skip the
-		// `defer resp.Body.Close()` and leak the file descriptor.
-		// See Fine Code Review Finding 1.5 (corrected fix).
+
 		if err != nil && resp != nil {
 			resp.Body.Close()
 			resp = nil
@@ -247,8 +226,6 @@ type chatChoice struct {
 	Message chatMessage `json:"message"`
 }
 
-// buildSingleTurnMessages constructs the message slice for a single-turn
-// LLM call: one system message (with schema appended) + one user message.
 func (c *OpenAIClient) buildSingleTurnMessages(prompt string, schema any) ([]chatMessage, error) {
 	schemaBytes, err := json.Marshal(schema)
 	if err != nil {
@@ -264,9 +241,6 @@ func (c *OpenAIClient) buildSingleTurnMessages(prompt string, schema any) ([]cha
 	}, nil
 }
 
-// buildMultiTurnMessages constructs the message slice for a multi-turn LLM
-// call. If the first message is a system message, the schema is appended to
-// it. Otherwise, a new system message is prepended.
 func (c *OpenAIClient) buildMultiTurnMessages(messages []Message, schema any) ([]chatMessage, error) {
 	schemaBytes, err := json.Marshal(schema)
 	if err != nil {
@@ -291,10 +265,6 @@ func (c *OpenAIClient) buildMultiTurnMessages(messages []Message, schema any) ([
 	return chatMsgs, nil
 }
 
-// send is the shared transport + response-parsing pipeline used by both
-// Completion and CompletionWithMessages. It handles: marshaling the
-// request body, calling doWithRetry, reading and validating the HTTP
-// response, and unmarshaling the final LLMResponse.
 func (c *OpenAIClient) send(ctx context.Context, msgs []chatMessage) (*LLMResponse, error) {
 	reqBody := chatRequest{
 		Model: c.model,

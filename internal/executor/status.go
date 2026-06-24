@@ -12,10 +12,6 @@ import (
 	"github.com/0x4A4FRN/fine/internal/storage"
 )
 
-// StatusDiscordAPI is the narrow set of Discord operations StatusExecutor needs:
-// MemberAPI for the permission gate, BotInfoAPI for the actual operation.
-// Defining it consumer-side lets tests mock only these sub-interfaces
-// instead of the full DiscordAPI composite.
 type StatusDiscordAPI interface {
 	MemberAPI
 	BotInfoAPI
@@ -63,7 +59,6 @@ func (e *StatusExecutor) Execute(ctx context.Context, _ Action) error {
 		dbLatency, dbErr = measureDBLatency(ctx, e.pool)
 	}
 
-	// Measure S3/B2 latency if an uploader is configured.
 	s3Latency := time.Duration(0)
 	s3Err := error(errors.New("s3: not configured"))
 	if e.uploader != nil {

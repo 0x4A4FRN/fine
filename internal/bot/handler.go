@@ -21,53 +21,6 @@ import (
 
 const handlerTimeout = 30 * time.Second
 
-// cacheHitThreshold is now a configurable field on Handler (see WithCacheHitThreshold).
-
-// placeholder is the live "Thinking…" message the bot posts immediately
-// after a mention reaches the LLM-bound code path. The reply rotates
-// every `placeholderRotationInterval` to a fresh random variant of
-// `handler.on_receive` until the LLM resolves; at resolve time, the bot
-// edits the placeholder in place to the final reply. The mutex
-// serialises the rotation goroutine against the resolve-time edit so a
-// final edit can never race a tick edit. Rotation is stopped via
-// stop() (idempotent via stopOnce).
-
-// noopStop is the placeholder stop function returned when the initial
-// send failed. Calling it is harmless.
-
-// startPlaceholder posts an immediate "Thinking…" reply (random variant
-// from handler.on_receive) and starts a background goroutine that
-// edits the reply to a fresh variant every `placeholderRotationInterval`.
-// Returns a pointer to the placeholder struct (nil if the initial send
-// failed) and a stop function. Pass the placeholder pointer to
-// deletePlaceholderAndReply (done in HandleMessageCreate) to finalize
-// to the actual reply. Stop is safe to call multiple times and is the
-// caller's defer responsibility to halt the rotation goroutine.
-//
-// When the initial send fails, the returned ph is nil but the stop
-// function is a no-op so callers can defer freely.
-
-// runPlaceholderRotation is the goroutine body. It ticks, picks a fresh
-// random variant, and edits the placeholder. Errors exit the loop so a
-// placeholder that has been externally deleted does not keep firing.
-//
-// Concurrency: Go's `select` is fair — when both ctx.Done and ticker.C
-// are ready, the goroutine may pick either. To prevent a final tick edit
-// racily overwriting the resolve-time reply (handler finalize-edit at
-// T_release, deferred stopFn cancel at T_cancel = T_release + ε, tick
-// arriving at T_tick = T_release + 2s: by the time we hold the lock
-// ctx may already be canceled), we re-check ctx.Err() AFTER acquiring
-// the mutex. If ctx is canceled, we skip the edit and return. The
-// handler's < stopFn waits for `ph.done`, so this return path is
-// observable.
-
-// deletePlaceholderAndReply finalises the placeholder to the given
-// final text by deleting the rotating placeholder and sending a fresh
-// reply to the invoking message. Returns the new bot message id.
-
-// ConversationStore is the narrow interface the Handler needs from
-// conversation.Store. Defining it consumer-side allows mock substitution
-// in tests without a real Postgres pool.
 type ConversationStore interface {
 	WriteMessage(
 		ctx context.Context,
@@ -79,15 +32,11 @@ type ConversationStore interface {
 	) ([]conversation.Message, error)
 }
 
-// CacheStore is the narrow interface the Handler needs from cache.Store.
 type CacheStore interface {
 	Get(ctx context.Context, guildID, template string) (*cache.CacheEntry, error)
 	Set(ctx context.Context, guildID, template string, entry cache.CacheEntry) error
 }
 
-// VoiceStateAPI provides voice state lookup for the voice-class pre-check
-// in the moderation dispatch path. Defined consumer-side so the handler
-// can be tested with a mock instead of a real *discord.Session.
 type VoiceStateAPI interface {
 	GuildMemberVoiceState(
 		guildID, userID string,
@@ -95,8 +44,6 @@ type VoiceStateAPI interface {
 	) (*discordgo.VoiceState, error)
 }
 
-// GuildMemberAPI provides guild member lookup for the timeout tracker's
-// OnGuildMemberUpdate handler (used to detect natural timeout expiry).
 type GuildMemberAPI interface {
 	GuildMember(
 		guildID, userID string,
@@ -104,8 +51,6 @@ type GuildMemberAPI interface {
 	) (*discordgo.Member, error)
 }
 
-// MessageEditComplexAPI provides complex message edit for attaching
-// confirmation buttons to a posted confirmation prompt.
 type MessageEditComplexAPI interface {
 	ChannelMessageEditComplex(
 		data *discordgo.MessageEdit,
@@ -113,8 +58,6 @@ type MessageEditComplexAPI interface {
 	) (*discordgo.Message, error)
 }
 
-// InteractionAPI provides Discord interaction response + channel message
-// delete for the button-click handler (snipe pagination + confirm yes/no).
 type InteractionAPI interface {
 	InteractionRespond(
 		ic *discordgo.Interaction,
@@ -124,9 +67,6 @@ type InteractionAPI interface {
 	ChannelMessageDelete(channelID, messageID string, opts ...discordgo.RequestOption) error
 }
 
-// DiscordSessionAPI is the composite of all Discord API sub-interfaces the
-// Handler needs beyond messageAPI. Each sub-interface is narrow (1-2
-// methods) so tests can mock only the operations they exercise.
 type DiscordSessionAPI interface {
 	VoiceStateAPI
 	GuildMemberAPI
@@ -164,19 +104,6 @@ type Handler struct {
 	confirmWindowDuration time.Duration
 }
 
-// TrySettle atomically marks an entry as settled and reports whether the
-// caller is the first settler. Returns true if the caller just marked the
-// entry (and should perform the edit/audit); false if the entry was already
-// settled by someone else (and should skip duplicate work).
-//
-// Concurrent callers (the GuildMemberUpdate listener and the polling
-// expiry sweeper) use TrySettle as the dedupe gate so we never double-edit
-// or write two audit rows for the same expiry event.
-
-// Snapshot returns a copy of all currently tracked entries. Callers iterate
-// the returned slice outside the tracker lock; concurrent updates from
-// other code paths do not race with the snapshot read.
-
 type Option func(*Handler)
 
 func WithSystemPrompt(prompt string) Option {
@@ -188,8 +115,7 @@ func WithSystemPrompt(prompt string) Option {
 func WithDiscord(s DiscordSessionAPI) Option {
 	return func(h *Handler) {
 		h.discord = s
-		// If the session also satisfies DiscordMessageAPI (the real
-		// discord.Session does), wire it as the message API too.
+
 		if ma, ok := s.(DiscordMessageAPI); ok {
 			h.messageAPI = ma
 		}
@@ -348,13 +274,6 @@ func truncateContent(s string, max int) string {
 	return s[:max] + "…"
 }
 
-// HandleMessageCreate is the entry point for all Discord MESSAGE_CREATE
-// events. It is a thin orchestrator that delegates each distinct concern
-// to a named helper method. The ordering of the helpers matters — see the
-// comments inline.
-//
-// If you add a new concern, extract it into its own method rather than
-// inlining it here. This function should stay under ~40 lines.
 func (h *Handler) HandleMessageCreate(
 	_ *discordgo.Session,
 	m *discordgo.MessageCreate,
@@ -377,7 +296,6 @@ func (h *Handler) HandleMessageCreate(
 	ctx, cancel := context.WithTimeout(context.Background(), handlerTimeout)
 	defer cancel()
 
-	// 1. Pending-confirmation window (text-based yes/no flow).
 	if h.windowDB != nil {
 		if h.handlePendingConfirmation(ctx, m) {
 			h.logger.Debug("handler: message consumed as confirmation reply")
@@ -387,7 +305,6 @@ func (h *Handler) HandleMessageCreate(
 		h.logger.Debug("handler: confirmation check skipped (no windowDB)")
 	}
 
-	// 2. Mention gate.
 	if !h.isMentionedOrReply(m) {
 		h.logger.Debug("handler: not mentioned, no reply chain; dropping",
 			zap.String("author_id", m.Author.ID),
@@ -395,20 +312,17 @@ func (h *Handler) HandleMessageCreate(
 		return
 	}
 
-	// 3. Strip mention.
 	cleaned := stripMention(m.Content, h.BotID())
 	if cleaned == "" {
 		h.logger.Debug("handler: cleaned content empty after stripping mention")
 		return
 	}
 
-	// 4. Bare utility command (ping/help/info/status/snipe) — bypasses LLM.
 	if intent := matchBareUtilityCommand(cleaned); intent != "" {
 		h.handleBareUtilityCommand(ctx, m, cleaned, intent)
 		return
 	}
 
-	// 5. Intent cache lookup.
 	if h.cacheStore != nil {
 		if h.handleCacheCheck(ctx, m, cleaned) {
 			h.logger.Debug("handler: short-circuited via cache hit")
@@ -419,31 +333,21 @@ func (h *Handler) HandleMessageCreate(
 		h.logger.Debug("handler: cache check skipped (no cacheStore)")
 	}
 
-	// 6. Full LLM path.
 	h.handleLLMPath(ctx, m, cleaned)
 }
 
-// isMentionedOrReply returns true if the bot was directly mentioned in the
-// message OR the message is a reply to one of the bot's recent messages.
-// The reply-chain check is bounded by replyWindow (5 minutes).
 func (h *Handler) isMentionedOrReply(m *discordgo.MessageCreate) bool {
-	mentioned := isMentioned(m.Mentions, h.BotID())
-	if !mentioned {
-		mentioned = h.isReplyToBot(m.Message)
-	}
-	if mentioned {
+	isMention := isMentioned(m.Mentions, h.BotID())
+	isReply := !isMention && h.isReplyToBot(m.Message)
+	if isMention || isReply {
 		h.logger.Debug("handler: mention gate passed",
-			zap.Bool("is_mention", isMentioned(m.Mentions, h.BotID())),
-			zap.Bool("is_reply_to_bot", mentioned && !isMentioned(m.Mentions, h.BotID())),
+			zap.Bool("is_mention", isMention),
+			zap.Bool("is_reply_to_bot", isReply),
 		)
 	}
-	return mentioned
+	return isMention || isReply
 }
 
-// handleBareUtilityCommand builds an LLMResponse for a bare utility command
-// (ping/help/info/status/snipe) and dispatches it through the utility path.
-// The LLM is bypassed entirely. For snipe, the count parameter is parsed
-// from the command text.
 func (h *Handler) handleBareUtilityCommand(
 	ctx context.Context,
 	m *discordgo.MessageCreate,
@@ -478,11 +382,6 @@ func (h *Handler) handleBareUtilityCommand(
 		}
 	}
 
-	// Start a rotating placeholder for status since it does multiple
-	// round-trips (gateway, DB, S3) that can take a moment. Other
-	// utility commands (ping, help, info) are fast enough to not
-	// need one. Snipe gets its own message and doesn't need a
-	// placeholder (the executor sends its result directly).
 	var ph *placeholder
 	if intent == "status" {
 		var stop func()
@@ -493,10 +392,6 @@ func (h *Handler) handleBareUtilityCommand(
 	h.executeUtilityResponse(ctx, resp, m, ph)
 }
 
-// handleLLMPath is the full LLM-bound flow: conversation history retrieval,
-// placeholder lifecycle, LLM round-trip, response validation, and dispatch
-// to the appropriate downstream handler (chat reply, utility, audit lookup,
-// or moderation dispatch).
 func (h *Handler) handleLLMPath(
 	ctx context.Context,
 	m *discordgo.MessageCreate,
@@ -507,7 +402,6 @@ func (h *Handler) handleLLMPath(
 		zap.Int("cleaned_len", len(cleaned)),
 	)
 
-	// Retrieve conversation history for LLM context.
 	var history []llm.Message
 	if h.store != nil {
 		msgs, err := h.store.GetHistory(ctx, m.GuildID, m.ChannelID, m.Author.ID)
@@ -527,11 +421,6 @@ func (h *Handler) handleLLMPath(
 	validationReplyText := h.cloudyReplyText()
 	replyTargetID := extractReplyTargetID(m)
 
-	// Compose the LLM-bound content with an actor prefix so the model has
-	// the actor's Discord snowflake available for pronoun-driven self-targets
-	// (e.g. "set my nickname to X") without us baking it into the system
-	// prompt. The conversation store still receives `cleaned` so future
-	// turns read human-readable history, not actor-prefixed text.
 	llmContent := cleaned
 	if m.Author != nil && m.Author.ID != "" {
 		llmContent = fmt.Sprintf("[actor:%s] %s", m.Author.ID, cleaned)
@@ -548,15 +437,12 @@ func (h *Handler) handleLLMPath(
 		zap.String("content_preview", truncateContent(llmContent, 200)),
 	)
 
-	// Post a rotating "Thinking…" placeholder before the LLM round-trip
-	// so the user sees the bot is alive while the model processes.
 	ph, stopPlaceholder := h.startPlaceholder(m.ChannelID, m.ID, ctx)
 	defer stopPlaceholder()
 
 	resp, err := h.ProcessMessageWithHistory(ctx, history, llmContent, replyTargetID)
 	if err != nil {
-		// Distinguish context-canceled (handler timeout) from other
-		// errors so operators can diagnose slow LLM providers.
+
 		if ctx.Err() != nil {
 			h.logger.Warn("handler: LLM processing timed out",
 				zap.String("cleaned_preview", truncateContent(cleaned, 120)),
@@ -573,8 +459,6 @@ func (h *Handler) handleLLMPath(
 		return
 	}
 
-	// Implicit delete via reply chain: if the user replied to a message
-	// with just "delete" (or a synonym), treat it as a delete_message intent.
 	if resp.Intent == "" && replyTargetID != "" && isImplicitDeleteText(cleaned) {
 		h.logger.Info("handler: implicit delete via reply chain",
 			zap.String("reply_target_id", replyTargetID),
@@ -611,8 +495,6 @@ func (h *Handler) handleLLMPath(
 		}
 	}
 
-	// Negation gate: if the user said "don't" / "never" / "cancel" / "abort"
-	// in a destructive request, abort instead of executing.
 	if resp.IsModeration && IsDestructive(resp.Intent) {
 		if safety.IsNegation(cleaned) {
 			h.logger.Info("handler: negation gate override",
@@ -623,14 +505,14 @@ func (h *Handler) handleLLMPath(
 		}
 	}
 
-	// Dispatch based on response classification.
-	// An empty intent means the LLM identified no moderation action —
-	// treat it as chat regardless of the is_moderation flag (which
-	// may be mis-set by the LLM). Without this, an empty-intent +
-	// is_moderation=true response falls through to the moderation
-	// dispatch, which no-ops and the LLM's chat reply is lost.
 	isUtility := utilityIntents[resp.Intent]
 	isEmptyIntent := resp.Intent == ""
+	isAuditLookup := resp.Intent == "audit_lookup"
+
+	if isAuditLookup {
+		h.handleAuditLookupRoute(ctx, m, resp, ph)
+		return
+	}
 	if (isEmptyIntent || !resp.IsModeration) && !isUtility {
 		h.handleChatReply(ctx, m, resp, ph)
 		return
@@ -639,16 +521,10 @@ func (h *Handler) handleLLMPath(
 		h.executeUtilityResponse(ctx, resp, m, ph)
 		return
 	}
-	if resp.Intent == "audit_lookup" {
-		h.handleAuditLookupRoute(ctx, m, resp, ph)
-		return
-	}
 
 	h.dispatchModerationResponse(ctx, m, cleaned, resp, ph)
 }
 
-// handleChatReply sends a non-moderation, non-utility chat reply from the
-// LLM. If the reply is empty, the placeholder is left in place (no-op).
 func (h *Handler) handleChatReply(
 	ctx context.Context,
 	m *discordgo.MessageCreate,
@@ -671,8 +547,6 @@ func (h *Handler) handleChatReply(
 	}
 }
 
-// handleAuditLookupRoute dispatches an audit_lookup intent to the audit
-// handler with the appropriate logging context.
 func (h *Handler) handleAuditLookupRoute(
 	ctx context.Context,
 	m *discordgo.MessageCreate,
@@ -690,11 +564,6 @@ func (h *Handler) handleAuditLookupRoute(
 	h.handleAuditLookup(ctx, m, resp, ph)
 }
 
-// dispatchModerationResponse is the single dispatch point for moderation
-// responses, used by both the LLM classification path and the cache-hit
-// path. It handles negation gate (already checked by caller for LLM path),
-// sudo bypass, multi-action confirmation, destructive confirmation with
-// voice pre-check, and default execution.
 func (h *Handler) dispatchModerationResponse(
 	ctx context.Context,
 	m *discordgo.MessageCreate,
@@ -731,10 +600,7 @@ func (h *Handler) dispatchModerationResponse(
 		h.logger.Info("handler: multi-action confirmation",
 			zap.Int("action_count", len(resp.Actions)),
 		)
-		// Pre-check permissions for ALL actions before showing the
-		// confirmation. If any action lacks permission, deny the entire
-		// batch immediately — don't make the user click "Yes" only to
-		// be told they can't.
+
 		if msg := h.preCheckMultiActionPermissions(ctx, m, resp); msg != "" {
 			if ph != nil {
 				h.deletePlaceholderAndReply(ph, m.ChannelID, m.ID, msg)
@@ -752,9 +618,6 @@ func (h *Handler) dispatchModerationResponse(
 			zap.String("intent", resp.Intent),
 		)
 
-		// Pre-check permission BEFORE showing the confirmation prompt.
-		// Users who lack permission get denied immediately instead of
-		// clicking "Yes" only to be told they can't.
 		if msg := h.preCheckSingleActionPermission(ctx, m, resp); msg != "" {
 			h.logger.Info("handler: permission pre-check blocked destructive confirmation",
 				zap.String("intent", resp.Intent),
@@ -789,9 +652,6 @@ func (h *Handler) dispatchModerationResponse(
 	h.runAndRecord(ctx, m, resp, ph, false, verbose)
 }
 
-// runAndRecord executes the response and writes the assistant message to
-// the conversation store. Consolidates the repeated
-// executeResponse + writeAssistantMessage pattern.
 func (h *Handler) runAndRecord(
 	ctx context.Context,
 	m *discordgo.MessageCreate,
@@ -806,8 +666,6 @@ func (h *Handler) runAndRecord(
 	}
 }
 
-// preCheckSingleActionPermission runs the permission gate for a single-action
-// destructive response. Returns "" if allowed, or the denial reply text.
 func (h *Handler) preCheckSingleActionPermission(
 	ctx context.Context,
 	m *discordgo.MessageCreate,
@@ -825,9 +683,6 @@ func (h *Handler) preCheckSingleActionPermission(
 	return h.preCheckPermissionFn(ctx, resp, meta)
 }
 
-// preCheckMultiActionPermissions runs the permission gate for every action
-// in a multi-action response. Returns "" if ALL actions are allowed, or the
-// first denial reply text if any action lacks permission.
 func (h *Handler) preCheckMultiActionPermissions(
 	ctx context.Context,
 	m *discordgo.MessageCreate,

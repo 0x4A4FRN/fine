@@ -39,12 +39,6 @@ var suggestedIntents = []string{
 	"snipe",
 }
 
-// noTargetIntents are moderation-shaped intents whose actions take zero
-// Discord targets. They must NOT be subject to the "exactly 1 target" rule
-// that the other destructive intents require. The set_nickname and
-// reset_nickname entries allow self-target inference at the executor
-// layer: when the LLM omits a target (or fails to bind a pronoun to the
-// actor's snowflake), the executor defaults the target to the actor.
 var noTargetIntents = map[string]bool{
 	"toggle_setting": true,
 	"set_nickname":   true,
@@ -178,14 +172,7 @@ func ValidateLLMResponse(resp *LLMResponse, logger *zap.Logger) error {
 			)
 		}
 		if isBrokenAuditLookup(resp.AuditQuery) {
-			// The LLM picked audit_lookup but the query is fundamentally
-			// unusable (missing/empty action with no usable target id, OR
-			// missing/invalid info). Demote this to casual chat so the
-			// LLM's `reply` field still drives the bot response — better
-			// than failing with "invalid action filter" and showing the
-			// generic cloudy error. We've seen this path with casually
-			// conversational inputs that the LLM mistakenly classified
-			// as audit_lookup (e.g. "who said?" with action="").
+
 			logger.Info("llm: audit_lookup with broken query; demoting to chat",
 				zap.Any("query", resp.AuditQuery),
 			)
@@ -313,13 +300,6 @@ func validateParameters(params Parameters) error {
 	return nil
 }
 
-// isBrokenAuditLookup reports whether an audit_query is so unusable
-// that the LLM's pick of intent="audit_lookup" should be demoted to
-// casual chat. Handles the case where the LLM emitted the audit_lookup
-// intent with a fundamentally empty action filter (no usable target id
-// either) — e.g. "who said?" answering with action="" — which would
-// otherwise fail validation with the unhelpful "invalid action filter
-// \"\"" error.
 func isBrokenAuditLookup(q *AuditQuery) bool {
 	if q == nil {
 		return true

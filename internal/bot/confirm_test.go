@@ -4,8 +4,6 @@ import (
 	"testing"
 )
 
-// ── MatchConfirmation ──────────────────────────────────────────────────────
-
 func TestMatchConfirmation_Affirmatives(t *testing.T) {
 	affirmatives := []string{
 		"y", "yes", "ok", "go", "confirm", "sure", "yeah",
@@ -114,14 +112,12 @@ func TestMatchConfirmation_NonMatch(t *testing.T) {
 }
 
 func TestMatchConfirmation_MultiWordNegative(t *testing.T) {
-	// "no way" is a valid negative — it contains a space but must match exactly.
+
 	action, matched := MatchConfirmation("no way")
 	if !matched || action != "no" {
 		t.Fatalf("expected 'no'/true, got %q/%v", action, matched)
 	}
 }
-
-// ── IsDestructive ──────────────────────────────────────────────────────────
 
 func TestIsDestructive_AllDestructiveIntents(t *testing.T) {
 	destructive := []string{
@@ -160,8 +156,7 @@ func TestIsDestructive_NonDestructiveIntents(t *testing.T) {
 }
 
 func TestIsDestructive_ModeratedButNotDestructive(t *testing.T) {
-	// These require moderation-tier permission but don't need the destructive
-	// confirmation gate — IsDestructive is false, isModerationTierIntent is true.
+
 	for _, intent := range []string{"pin_message", "unpin_message", "delete_message"} {
 		t.Run(intent, func(t *testing.T) {
 			if IsDestructive(intent) {

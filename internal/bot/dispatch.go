@@ -45,25 +45,15 @@ func (h *Handler) executeResponseWithMeta(
 	verbose bool,
 	ph *placeholder,
 ) bool {
-	// Delete the placeholder BEFORE calling the executor. This ensures the
-	// rotating "Thinking…" message is gone before any new message (from the
-	// executor or from us) appears in the channel. The previous order
-	// (delete after) caused a visible flash where the new reply appeared
-	// alongside the still-rotating placeholder before the delete propagated.
+
 	if ph != nil {
 		h.deletePlaceholderOnly(ph)
-		ph = nil // prevent double-delete in downstream helpers
 	}
 
 	err := h.executor.ExecuteResponse(ctx, resp, meta)
 	if err != nil {
 		if tr, ok := err.(*executor.TextResult); ok {
-			// TextResult is NOT an error — it's the executor's
-			// way of saying "I handled this, send this text as
-			// the reply." Executors like purge use it for success
-			// messages with auto-delete. Return true so the
-			// caller (e.g. handleConfirmYesButton) treats this
-			// as a successful execution.
+
 			h.handleExecutorTextResult(meta.ChannelID, meta.SourceMsgID, tr, nil)
 			return true
 		}
@@ -72,7 +62,6 @@ func (h *Handler) executeResponseWithMeta(
 			zap.Error(err),
 		)
 
-		// Placeholder already deleted above; just send the error reply.
 		botMsgID, _ := h.sendReply(
 			meta.ChannelID,
 			h.failReplyText(resp.Intent, resp, err, verbose),
@@ -82,9 +71,6 @@ func (h *Handler) executeResponseWithMeta(
 		return false
 	}
 
-	// Send the success reply and capture its message id so the natural-end
-	// or lift path can edit it later instead of posting a redundant new one.
-	// Placeholder already deleted above; just send the reply.
 	botMsgID, _ := h.sendReply(
 		meta.ChannelID,
 		h.renderDefaultSuccess(resp.Intent, resp),
@@ -93,10 +79,6 @@ func (h *Handler) executeResponseWithMeta(
 
 	h.recordTimeoutTransition(resp, meta, botMsgID)
 
-	// Untimeout also edits the original timeout-grant message in place so
-	// the channel timeline shows the lift transition. The fresh success
-	// reply above is the command acknowledgement; the edit updates the
-	// state of the previously posted message.
 	if resp.Intent == "untimeout" {
 		h.handleTimeoutLift(resp, meta)
 	}
@@ -113,16 +95,13 @@ func (h *Handler) handleExecutorTextResult(
 		return
 	}
 
-	// Safety net: callers (executeUtilityResponse, executeResponseWithMeta)
-	// pre-delete the placeholder before invoking the executor, so ph should
-	// be nil here. If it isn't (defensive), clean it up before sending.
 	if ph != nil && ph.msgID != "" {
 		h.deletePlaceholderOnly(ph)
 	}
 
 	var msgID string
 	if tr.SkipReply || sourceMsgID == "" {
-		// No reply reference requested (or no source to reply to) — plain send.
+
 		msgID = h.editOrSend(channelID, "", tr.Text)
 		if msgID == "" {
 			return
@@ -133,8 +112,7 @@ func (h *Handler) handleExecutorTextResult(
 			zap.String("message_id", msgID),
 		)
 	} else {
-		// Send as a reply to the invoking message. Placeholder is already
-		// gone (pre-deleted by caller), so no delete-and-reply dance needed.
+
 		var ok bool
 		msgID, ok = h.sendReply(channelID, tr.Text, sourceMsgID)
 		if !ok || msgID == "" {
@@ -181,15 +159,6 @@ func (h *Handler) executeUtilityResponse(
 		zap.String("intent", resp.Intent),
 	)
 
-	// Snipe sends its own message with buttons inside Execute. The
-	// placeholder must be deleted BEFORE Execute so the user doesn't see
-	// both the placeholder and the snipe message briefly coexist.
-	//
-	// Other utility executors (ping, help, info, status) return a
-	// TextResult. For those, we want the placeholder visible DURING
-	// execution (e.g. status does gateway + DB + S3 round-trips that can
-	// take a moment). The placeholder is deleted by handleExecutorTextResult
-	// after the result is sent.
 	if resp.Intent == "snipe" && ph != nil {
 		h.deletePlaceholderOnly(ph)
 		ph = nil
@@ -219,15 +188,13 @@ func (h *Handler) executeUtilityResponse(
 			zap.String("intent", resp.Intent),
 			zap.Error(err),
 		)
-		// Clean up placeholder if it wasn't already (non-snipe case).
+
 		if ph != nil {
 			h.deletePlaceholderOnly(ph)
 		}
 		return
 	}
-	// err == nil — the executor handled its own message directly (only
-	// snipe currently). Placeholder was already pre-deleted for snipe.
-	// For any future executor that returns nil without pre-delete, clean up.
+
 	if ph != nil {
 		h.deletePlaceholderOnly(ph)
 	}

@@ -1,13 +1,16 @@
 package executor
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
 
+	"github.com/0x4A4FRN/fine/internal/audit"
 	"github.com/0x4A4FRN/fine/internal/llm"
 	"github.com/0x4A4FRN/fine/internal/replies"
 )
@@ -62,19 +65,14 @@ func ensureTargetInVoice(
 	vs, err := api.GuildMemberVoiceState(guildID, userID)
 	if err != nil {
 		if errors.Is(err, discordgo.ErrStateNotFound) {
-			// Expected: the user simply has no voice state (never connected,
-			// or Discord's state cache has no entry). Falls through to the
-			// vs/ChannelID check below which surfaces the "not in voice"
-			// reply.
+
 			if logger != nil {
 				logger.Debug("executor: voice state lookup: user not in voice state cache",
 					zap.String("user_id", userID),
 				)
 			}
 		} else {
-			// Unexpected error (network, permissions, etc.). Log it but still
-			// fall through to the "not in voice" reply so the caller gets a
-			// deterministic, safe result rather than an opaque failure.
+
 			if logger != nil {
 				logger.Warn("executor: voice state lookup error; treating as not-in-voice",
 					zap.String("user_id", userID),
@@ -96,13 +94,25 @@ func replyTextFor(r replies.Renderer, category, key string) *TextResult {
 	return &TextResult{Text: r.Get(category, key, nil)}
 }
 
-// auditParameters merges a sudo marker into the executor's parameter blob when
-// the action was sudo-bypassed. Returns the original value unchanged when
-// sudo is false so the JSON shape is identical for confirm-flow actions.
-//
-// Note: errors are silently swallowed because this is a free function
-// without access to a logger. The sudo marker is best-effort; if the
-// JSON round-trip fails, the audit row is written without it.
+func writeAudit(ctx context.Context, pool audit.DB, logger *zap.Logger, action Action, targetID, targetType string) error {
+	if err := audit.WriteAction(ctx, pool, audit.ModAction{
+		GuildID:         action.GuildID,
+		ChannelID:       action.ChannelID,
+		ActorID:         action.ActorID,
+		TargetID:        targetID,
+		TargetType:      targetType,
+		Intent:          action.Intent,
+		Reason:          orEmpty(action.Parameters.Reason),
+		Parameters:      auditParameters(action, action.Parameters),
+		SourceMessageID: action.SourceMsgID,
+		ExecutedAt:      time.Now().UTC(),
+	}); err != nil {
+		logger.Error("executor: "+action.Intent+": audit write failed", zap.Error(err))
+		return fmt.Errorf("executor: %s: audit write: %w", action.Intent, err)
+	}
+	return nil
+}
+
 func auditParameters(action Action, base any) any {
 	if !action.Sudo {
 		return base

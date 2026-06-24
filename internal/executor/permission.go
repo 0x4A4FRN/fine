@@ -42,14 +42,6 @@ func renderReply(r replies.Renderer, category, key string, vars any) string {
 	return r.Get(category, key, vars)
 }
 
-type permFn func(channelID string, guildPerms int64) bool
-
-// PreChecker is implemented by executors that support pre-execution
-// permission checks. The handler calls PreCheck BEFORE showing the
-// destructive confirmation prompt, so users who lack permission get
-// denied immediately instead of clicking "Yes" only to be told they
-// can't. Returns "" if the actor has permission, or the denial reply
-// text if not.
 type PreChecker interface {
 	PreCheck(ctx context.Context, action Action) string
 }
@@ -58,17 +50,10 @@ func PermissionAdministrator(_ string, guildPerms int64) bool {
 	return guildPerms&discordgo.PermissionAdministrator != 0
 }
 
-// gate enforces permission, snowflake validity, self-protection, hierarchy,
-// and member-existence checks for a moderation intent. Pass skipUserChecks
-// when the intent does not operate on a guild member (e.g. message pinning or
-// message deletion). Pass skipSelfChecks only for non-destructive intents
-// where the actor acting on themselves is a legitimate operation (currently
-// just set_nickname / reset_nickname); for all other intents the self-block
-// remains in force.
 func gate(
 	api MemberAPI,
 	r replies.Renderer,
-	permFn permFn,
+	permBits int64,
 	replyCategory string,
 	action Action,
 	targetID string,
@@ -87,7 +72,7 @@ func gate(
 	}
 	authorPerms := guildPermsForRoles(roles, authorMember.Roles)
 
-	if !permFn(action.ChannelID, authorPerms) {
+	if authorPerms&(permBits|discordgo.PermissionAdministrator) == 0 {
 		return renderReply(r, replyCategory, "no_permission", nil)
 	}
 
@@ -116,10 +101,6 @@ func gate(
 		}
 	}
 
-	// Skip hierarchy check when the actor is targeting themselves
-	// (e.g. set_nickname on own nickname). You always have hierarchy
-	// over yourself — without this, the check fails because
-	// authorPos == targetPos (same person, same roles).
 	if targetID == action.ActorID {
 		return ""
 	}

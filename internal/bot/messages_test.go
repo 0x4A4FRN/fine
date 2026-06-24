@@ -6,12 +6,10 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-// ── isMentioned ────────────────────────────────────────────────────────────
-
 func TestIsMentioned_BotInList(t *testing.T) {
 	mentions := []*discordgo.User{
 		{ID: "111111111111111111"},
-		{ID: "222222222222222222"}, // bot
+		{ID: "222222222222222222"},
 	}
 	if !isMentioned(mentions, "222222222222222222") {
 		t.Fatal("expected true when botID is in mentions")
@@ -45,16 +43,8 @@ func TestIsMentioned_OnlyBot(t *testing.T) {
 }
 
 func TestIsMentioned_NilUserInList(t *testing.T) {
-	// Defensive: nil entries in mention list should not panic (they would in
-	// practice crash on u.ID, but this guards the loop logic).
-	// Since the current implementation does not guard against nil users,
-	// we only add this test to document the expectation if a guard is added.
-	// Uncomment when nil-safe handling is introduced:
-	//   mentions := []*discordgo.User{nil, {ID: "bot-id"}}
-	//   isMentioned(mentions, "bot-id") // must not panic
-}
 
-// ── stripMention ───────────────────────────────────────────────────────────
+}
 
 func TestStripMention_StripsBareAt(t *testing.T) {
 	result := stripMention("<@222222222222222222> ban Alice", "222222222222222222")
@@ -86,7 +76,7 @@ func TestStripMention_TrimsSurroundingWhitespace(t *testing.T) {
 }
 
 func TestStripMention_UnrelatedMentionUntouched(t *testing.T) {
-	// Another user's mention should not be stripped
+
 	result := stripMention("<@other-user> hello", "bot-id")
 	if result != "<@other-user> hello" {
 		t.Fatalf("expected original content, got %q", result)
@@ -108,7 +98,7 @@ func TestStripMention_ContentWithNoMention(t *testing.T) {
 }
 
 func TestStripMention_MultipleMentions(t *testing.T) {
-	// If bot is mentioned twice, both are stripped
+
 	content := "<@bot> <@bot> please help"
 	result := stripMention(content, "bot")
 	if result != "please help" {

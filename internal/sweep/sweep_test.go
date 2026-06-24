@@ -11,8 +11,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// ── mock: replies.Renderer ─────────────────────────────────────────────────
-
 type mockRenderer struct {
 	result string
 }
@@ -25,10 +23,6 @@ func (m *mockRenderer) Render(_ string, _ any) (string, error) {
 }
 func (m *mockRenderer) Has(_, _ string) bool { return true }
 
-// ── mock: pgx.Rows ─────────────────────────────────────────────────────────
-
-// mockRows implements pgx.Rows for the sweep query result.
-// Each row is a [4]any{id int64, channelID, botMsgID, payload string}.
 type mockRows struct {
 	data    [][4]any
 	pos     int
@@ -64,8 +58,6 @@ func (r *mockRows) Scan(dest ...any) error {
 	return nil
 }
 
-// ── mock: DB (sweep.DB) ────────────────────────────────────────────────────
-
 type execCall struct {
 	tag pgconn.CommandTag
 	err error
@@ -74,7 +66,7 @@ type execCall struct {
 type mockDB struct {
 	rows      pgx.Rows
 	queryErr  error
-	execCalls []execCall // per-call results consumed in order
+	execCalls []execCall
 	execIdx   int
 }
 
@@ -84,15 +76,13 @@ func (m *mockDB) Query(_ context.Context, _ string, _ ...any) (pgx.Rows, error) 
 
 func (m *mockDB) Exec(_ context.Context, _ string, _ ...any) (pgconn.CommandTag, error) {
 	if m.execIdx >= len(m.execCalls) {
-		// default: 1 row affected, no error
+
 		return pgconn.NewCommandTag("UPDATE 1"), nil
 	}
 	c := m.execCalls[m.execIdx]
 	m.execIdx++
 	return c.tag, c.err
 }
-
-// ── mock: MessageEditor ────────────────────────────────────────────────────
 
 type mockEditor struct {
 	calls   []struct{ channelID, msgID, content string }
@@ -103,8 +93,6 @@ func (e *mockEditor) ChannelMessageEdit(channelID, msgID, content string, _ ...d
 	e.calls = append(e.calls, struct{ channelID, msgID, content string }{channelID, msgID, content})
 	return nil, e.editErr
 }
-
-// ── extractOriginalConfirmText ─────────────────────────────────────────────
 
 func TestExtractOriginalConfirmText_Empty(t *testing.T) {
 	if got := extractOriginalConfirmText(""); got != "" {
@@ -132,8 +120,6 @@ func TestExtractOriginalConfirmText_WithField(t *testing.T) {
 	}
 }
 
-// ── buildExpiredText ───────────────────────────────────────────────────────
-
 func TestBuildExpiredText_NilRenderer_ReturnsFallback(t *testing.T) {
 	got := buildExpiredText(nil, `{"original_confirm_text":"Ban Alice?"}`)
 	if got != fallbackExpiredText {
@@ -157,8 +143,6 @@ func TestBuildExpiredText_ValidPayload_UsesRenderer(t *testing.T) {
 	}
 }
 
-// ── runSweep (via SweepOnce) ───────────────────────────────────────────────
-
 func makeWindowRows(windows ...expiredWindow) *mockRows {
 	data := make([][4]any, len(windows))
 	for i, w := range windows {
@@ -179,7 +163,7 @@ func TestSweepOnce_NoExpiredWindows_NoOp(t *testing.T) {
 func TestSweepOnce_QueryError_SkipsProcessing(t *testing.T) {
 	db := &mockDB{rows: nil, queryErr: errors.New("db down")}
 	editor := &mockEditor{}
-	// Must not panic and must not call editor
+
 	SweepOnce(context.Background(), db, editor, nil, zap.NewNop())
 	if len(editor.calls) != 0 {
 		t.Fatalf("expected 0 edit calls after query error, got %d", len(editor.calls))
@@ -217,7 +201,7 @@ func TestSweepOnce_HappyPath_EditsMessage(t *testing.T) {
 }
 
 func TestSweepOnce_AlreadyResolved_SkipsEdit(t *testing.T) {
-	// RowsAffected = 0 means another process already expired it
+
 	w := expiredWindow{ID: 7, ChannelID: "c", BotMessageID: "m", Payload: "{}"}
 	db := &mockDB{
 		rows: makeWindowRows(w),
@@ -244,7 +228,7 @@ func TestSweepOnce_ExecError_ContinuesToNextWindow(t *testing.T) {
 	}
 	editor := &mockEditor{}
 	SweepOnce(context.Background(), db, editor, nil, zap.NewNop())
-	// w1 exec failed → skipped; w2 succeeded → edited
+
 	if len(editor.calls) != 1 {
 		t.Fatalf("expected 1 edit (for w2), got %d", len(editor.calls))
 	}
@@ -258,7 +242,7 @@ func TestSweepOnce_EditorError_ContinuesToNextWindow(t *testing.T) {
 	w2 := expiredWindow{ID: 2, ChannelID: "c", BotMessageID: "m2", Payload: "{}"}
 	db := &mockDB{rows: makeWindowRows(w1, w2)}
 	editor := &mockEditor{editErr: errors.New("discord 403")}
-	// Both exec calls succeed; both editor calls fail → continue is logged but no panic
+
 	SweepOnce(context.Background(), db, editor, nil, zap.NewNop())
 	if len(editor.calls) != 2 {
 		t.Fatalf("expected editor called twice (even on error), got %d", len(editor.calls))
@@ -268,9 +252,9 @@ func TestSweepOnce_EditorError_ContinuesToNextWindow(t *testing.T) {
 func TestSweepOnce_NilEditor_NoOp(t *testing.T) {
 	w := expiredWindow{ID: 1, ChannelID: "c", BotMessageID: "m", Payload: "{}"}
 	db := &mockDB{rows: makeWindowRows(w)}
-	// nil editor: exec runs but the edit branch is skipped entirely
+
 	SweepOnce(context.Background(), db, nil, nil, zap.NewNop())
-	// No panic is the test.
+
 }
 
 func TestSweepOnce_MultipleWindows_AllEdited(t *testing.T) {

@@ -11,8 +11,6 @@ import (
 	"github.com/0x4A4FRN/fine/internal/llm"
 )
 
-// ── stubExecutor ───────────────────────────────────────────────────────────
-
 type stubExecutor struct {
 	calls     []Action
 	returnErr error
@@ -23,17 +21,12 @@ func (s *stubExecutor) Execute(_ context.Context, action Action) error {
 	return s.returnErr
 }
 
-// newTestRouter creates a Router with only the fields needed for routing
-// tests — no Discord API, no DB, no real executors. The logger is a nop so
-// output doesn't pollute test runs.
 func newTestRouter(executors map[string]Executor) *Router {
 	return &Router{
 		executors: executors,
 		logger:    zap.NewNop(),
 	}
 }
-
-// ── MultiError ─────────────────────────────────────────────────────────────
 
 func TestMultiError_HasFailures_NoFailed(t *testing.T) {
 	me := &MultiError{Succeeded: []string{"ban"}}
@@ -108,8 +101,6 @@ func TestMultiError_Error_Mixed(t *testing.T) {
 	}
 }
 
-// ── Route ──────────────────────────────────────────────────────────────────
-
 func TestRoute_EmptyIntent_ReturnsNil(t *testing.T) {
 	r := newTestRouter(nil)
 	err := r.Route(context.Background(), Action{Intent: ""})
@@ -159,8 +150,6 @@ func TestRoute_KnownIntent_ExecutorErrorPropagated(t *testing.T) {
 		t.Fatalf("expected sentinel error, got: %v", err)
 	}
 }
-
-// ── ExecuteResponse ────────────────────────────────────────────────────────
 
 func TestExecuteResponse_NonModeration_IsNoOp(t *testing.T) {
 	stub := &stubExecutor{}
@@ -291,13 +280,8 @@ func TestExecuteResponse_MultiAction_AllFail_ReturnsMultiError(t *testing.T) {
 	}
 }
 
-// ── Snipe nil-guard methods ────────────────────────────────────────────────
-// The snipeExecutor field is assigned in registerExecutors(). These tests
-// verify that every Snipe* method degrades gracefully when the field is nil
-// (i.e. when WithSnipeExecutor was never called).
-
 func TestSnipePagination_NilExecutor_ReturnsNil(t *testing.T) {
-	r := &Router{logger: zap.NewNop()} // snipeExecutor intentionally nil
+	r := &Router{logger: zap.NewNop()}
 	snap, text, components := r.SnipePagination(context.Background(), "msg", "next")
 	if snap != nil {
 		t.Errorf("expected nil snapshot, got %+v", snap)
@@ -319,11 +303,9 @@ func TestSnipeSourceMsgID_NilExecutor_ReturnsEmpty(t *testing.T) {
 
 func TestSnipeDeletePage_NilExecutor_NoPanic(t *testing.T) {
 	r := &Router{logger: zap.NewNop()}
-	// Must not panic.
+
 	r.SnipeDeletePage("msg-id")
 }
-
-// ── actionFromMeta ─────────────────────────────────────────────────────────
 
 func TestActionFromMeta_CopiesAllFields(t *testing.T) {
 	meta := ActionMeta{

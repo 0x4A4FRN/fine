@@ -10,9 +10,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// LogStreamer is the interface the /logs SSE handler needs from the
-// logging broadcaster. Defined consumer-side so the web package doesn't
-// depend on the logging package.
 type LogStreamer interface {
 	Subscribe(maxLines int) <-chan []byte
 	Unsubscribe(ch <-chan []byte)
@@ -57,13 +54,6 @@ func Serve(ctx context.Context, addr string, logger *zap.Logger, logStreamer Log
 	}
 }
 
-// handleLogStream streams log lines as Server-Sent Events. The client
-// connects with:
-//
-//	curl --no-buffer -H "Authorization: Bearer <secret>" http://host:8080/logs
-//
-// If no secret is configured (empty string), the endpoint returns 503.
-// If the secret doesn't match, the endpoint returns 401.
 func handleLogStream(w http.ResponseWriter, r *http.Request, streamer LogStreamer, secret string, logger *zap.Logger) {
 	if secret == "" {
 		http.Error(w, "log streaming not configured (set LOG_STREAM_SECRET)", http.StatusServiceUnavailable)
@@ -88,9 +78,6 @@ func handleLogStream(w http.ResponseWriter, r *http.Request, streamer LogStreame
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	// Parse ?lines=N query param. Default is 100 (recent history).
-	// ?lines=0 disables history (live only). ?lines=-1 or ?lines=all
-	// replays the full buffer (up to 1000 lines).
 	maxLines := 100
 	if l := r.URL.Query().Get("lines"); l != "" {
 		if l == "all" {
@@ -110,9 +97,7 @@ func handleLogStream(w http.ResponseWriter, r *http.Request, streamer LogStreame
 			if !ok {
 				return
 			}
-			// SSE format: "data: <line>\n\n". The line already has a
-			// trailing newline from the encoder; trim it and let SSE
-			// add its own framing.
+
 			text := string(line)
 			if len(text) > 0 && text[len(text)-1] == '\n' {
 				text = text[:len(text)-1]

@@ -3,7 +3,6 @@ package executor
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"go.uber.org/zap"
 
@@ -13,10 +12,6 @@ import (
 	"github.com/0x4A4FRN/fine/internal/replies"
 )
 
-// BanDiscordAPI is the narrow set of Discord operations BanExecutor needs:
-// MemberAPI for the permission gate, BanAPI for the actual ban. Defining it
-// consumer-side lets tests mock only these two sub-interfaces instead of
-// the full DiscordAPI composite.
 type BanDiscordAPI interface {
 	MemberAPI
 	BanAPI
@@ -59,10 +54,7 @@ func (e *BanExecutor) Execute(ctx context.Context, action Action) error {
 		return replyTextFor(e.replies, "ban", "no_target")
 	}
 
-	banPermFn := func(_ string, guildPerms int64) bool {
-		return guildPerms&(discordgo.PermissionBanMembers|discordgo.PermissionAdministrator) != 0
-	}
-	if msg := gate(e.discord, e.replies, banPermFn, "ban", action, userID, false, false, false); msg != "" {
+	if msg := gate(e.discord, e.replies, discordgo.PermissionBanMembers, "ban", action, userID, false, false, false); msg != "" {
 		return &TextResult{Text: msg}
 	}
 
@@ -78,20 +70,8 @@ func (e *BanExecutor) Execute(ctx context.Context, action Action) error {
 		return fmt.Errorf("executor: ban: %w", err)
 	}
 
-	if err := audit.WriteAction(ctx, e.pool, audit.ModAction{
-		GuildID:         action.GuildID,
-		ChannelID:       action.ChannelID,
-		ActorID:         action.ActorID,
-		TargetID:        userID,
-		TargetType:      "user",
-		Intent:          action.Intent,
-		Reason:          reason,
-		Parameters:      auditParameters(action, action.Parameters),
-		SourceMessageID: action.SourceMsgID,
-		ExecutedAt:      time.Now().UTC(),
-	}); err != nil {
-		e.logger.Error("executor: ban: audit write failed", zap.Error(err))
-		return fmt.Errorf("executor: ban: audit write: %w", err)
+	if err := writeAudit(ctx, e.pool, e.logger, action, userID, "user"); err != nil {
+		return err
 	}
 
 	e.logger.Info("executor: ban: executed",
@@ -100,15 +80,9 @@ func (e *BanExecutor) Execute(ctx context.Context, action Action) error {
 	return nil
 }
 
-// PreCheck runs the permission gate without executing the action. Returns ""
-// if allowed, or the denial reply text. Called by the handler before showing
-// the destructive confirmation prompt.
 func (e *BanExecutor) PreCheck(_ context.Context, action Action) string {
 	userID, _ := extractUserTarget(action.Targets)
-	permFn := func(_ string, guildPerms int64) bool {
-		return guildPerms&(discordgo.PermissionBanMembers|discordgo.PermissionAdministrator) != 0
-	}
-	return gate(e.discord, e.replies, permFn, "ban", action, userID, false, false, false)
+	return gate(e.discord, e.replies, discordgo.PermissionBanMembers, "ban", action, userID, false, false, false)
 }
 
 var _ Executor = (*BanExecutor)(nil)

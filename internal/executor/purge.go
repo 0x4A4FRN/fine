@@ -24,18 +24,12 @@ const (
 	purgeAutoDeleteAfter = 5 * time.Second
 )
 
-// PurgeScanResult holds the result of a pre-confirmation channel scan.
-// It tells the user exactly what will happen before they click "Yes".
 type PurgeScanResult struct {
-	Deletable int // messages < 14 days old (can be bulk-deleted)
-	Skipped   int // messages >= 14 days old (Discord won't allow bulk delete)
-	Requested int // the count the user asked for (clamped to maxAllPurge)
+	Deletable int
+	Skipped   int
+	Requested int
 }
 
-// PurgeDiscordAPI is the narrow set of Discord operations PurgeExecutor needs:
-// MemberAPI for the permission gate, ChannelMessageAPI for the actual operation.
-// Defining it consumer-side lets tests mock only these sub-interfaces
-// instead of the full DiscordAPI composite.
 type PurgeDiscordAPI interface {
 	MemberAPI
 	ChannelMessageAPI
@@ -76,10 +70,7 @@ func (e *PurgeExecutor) Execute(ctx context.Context, action Action) error {
 		zap.Int("requested_count", derefMessageCount(action.Parameters.MessageCount)),
 	)
 
-	purgePermFn := func(_ string, guildPerms int64) bool {
-		return guildPerms&(discordgo.PermissionManageMessages|discordgo.PermissionAdministrator) != 0
-	}
-	if msg := gate(e.discord, e.replies, purgePermFn, "purge", action, "", true, false, false); msg != "" {
+	if msg := gate(e.discord, e.replies, discordgo.PermissionManageMessages, "purge", action, "", true, false, false); msg != "" {
 		return &TextResult{Text: msg}
 	}
 
@@ -150,20 +141,8 @@ func (e *PurgeExecutor) Execute(ctx context.Context, action Action) error {
 		}
 	}
 
-	if err := audit.WriteAction(ctx, e.pool, audit.ModAction{
-		GuildID:         action.GuildID,
-		ChannelID:       action.ChannelID,
-		ActorID:         action.ActorID,
-		TargetID:        action.ChannelID,
-		TargetType:      "message",
-		Intent:          action.Intent,
-		Reason:          orEmpty(action.Parameters.Reason),
-		Parameters:      auditParameters(action, action.Parameters),
-		SourceMessageID: action.SourceMsgID,
-		ExecutedAt:      time.Now().UTC(),
-	}); err != nil {
-		e.logger.Error("executor: purge: audit write failed", zap.Error(err))
-		return fmt.Errorf("executor: purge_messages: audit write: %w", err)
+	if err := writeAudit(ctx, e.pool, e.logger, action, action.ChannelID, "message"); err != nil {
+		return err
 	}
 
 	maxAgeDays := int(discordBulkDeleteMaxAge.Hours() / 24)
@@ -176,20 +155,7 @@ func (e *PurgeExecutor) Execute(ctx context.Context, action Action) error {
 	}
 
 	var key string
-	// "all" variants are for when the user asked to purge everything
-	// (count >= maxAllPurge, i.e. 1000) AND we exhausted the channel
-	// (deleted+skipped < count means there weren't enough eligible
-	// messages to fill the request). This is the "purge everything
-	// in the channel" semantic.
-	//
-	// success_all_skipped specifically means we deleted NOTHING — all
-	// messages in the channel were too old. The template variants say
-	// things like "Zero deleted" and "Total waste of time".
-	//
-	// For any case where we deleted SOME and skipped SOME (regardless
-	// of whether it was an "all" purge or a specific count), use
-	// success_partial_skipped — the template says "Deleted X of Y.
-	// The other Z are older than..." which fits both scenarios.
+
 	isAllPurge := count >= maxAllPurge && (deleted+skipped) < count
 	switch {
 	case isAllPurge && deleted == 0 && skipped > 0:
@@ -218,15 +184,7 @@ func (e *PurgeExecutor) Execute(ctx context.Context, action Action) error {
 }
 
 func (e *PurgeExecutor) deleteConfirmationFlowMessages(action Action) {
-	// Delete the three confirmation-flow messages: the original invoke
-	// (SourceMsgID), the bot's confirmation prompt (BotMessageID), and the
-	// user's text "yes" reply (UserReplyMessageID, if the text flow was
-	// used rather than the button flow).
-	//
-	// These are deleted AFTER the bulk purge completes so that other users
-	// in the channel see the invoke + confirmation while messages are
-	// disappearing, giving them context for the purge. Only after the
-	// purge is done do we clean up the command trail.
+
 	if action.SourceMsgID != "" {
 		if err := e.discord.DeleteMessage(action.ChannelID, action.SourceMsgID); err != nil {
 			e.logger.Warn("executor: purge: deleting source invoke failed",
@@ -272,18 +230,6 @@ func derefMessageCount(p *int) int {
 	return *p
 }
 
-// ScanChannel counts how many messages in the channel (before sourceMsgID)
-// are deletable (< 14 days old) vs too old (>= 14 days), up to maxCount.
-//
-// Discord has no "count messages" endpoint, so we paginate ChannelMessages
-// (100 per call). Optimization: Discord returns messages newest-first, and
-// snowflakes are chronological. Once we hit a message older than 14 days,
-// ALL subsequent messages are also too old — we stop scanning immediately.
-// This makes the scan fast for channels with mostly-old content (the common
-// case for "purge" requests).
-//
-// The scan is bounded by maxCount: we stop once deletable+skipped reaches
-// maxCount, or once we hit too-old messages, or the channel is exhausted.
 func (e *PurgeExecutor) ScanChannel(
 	ctx context.Context,
 	channelID, sourceMsgID string,
@@ -304,11 +250,6 @@ func (e *PurgeExecutor) ScanChannel(
 			break
 		}
 
-		// Walk the batch newest-first. Once we encounter a too-old
-		// message, every subsequent message in this batch and all
-		// future batches is also too old (Discord returns newest-first,
-		// snowflakes are chronological). Count the remaining too-old
-		// messages in this batch and stop scanning.
 		hitTooOld := false
 		for _, msg := range msgs {
 			if msg.ID == sourceMsgID {
@@ -320,8 +261,7 @@ func (e *PurgeExecutor) ScanChannel(
 				continue
 			}
 			if hitTooOld {
-				// Shouldn't happen (too-old messages are contiguous),
-				// but guard anyway.
+
 				skipped++
 				continue
 			}
@@ -401,9 +341,7 @@ func (e *PurgeExecutor) purgeMessages(
 				break
 			}
 		}
-		// Accumulate the batch's skipped count into the running total.
-		// Without this, totalSkipped stays 0 and the template selection
-		// logic picks success_partial instead of success_partial_skipped.
+
 		totalSkipped += batchSkipped
 
 		e.logger.Info("executor: purge: batch evaluated",
@@ -439,15 +377,6 @@ func (e *PurgeExecutor) purgeMessages(
 		beforeID = msgs[len(msgs)-1].ID
 	}
 
-	// NOTE: The source/invoking message is NOT deleted here. It is
-	// deleted by deleteConfirmationFlowMessages (called from Execute
-	// after this function returns) so that the invoke + confirmation
-	// prompt remain visible in the channel WHILE the bulk delete is
-	// happening. This gives other users context for why messages are
-	// disappearing — they see the "delete 200 messages" command and
-	// the confirmation prompt, then both get cleaned up after the
-	// purge completes.
-
 	e.logger.Info("executor: purge: purgeMessages finished",
 		zap.Int("deleted", totalDeleted),
 		zap.Int("skipped_too_old", totalSkipped),
@@ -480,12 +409,6 @@ func (e *PurgeExecutor) render(category, key string, vars any) string {
 
 var _ Executor = (*PurgeExecutor)(nil)
 
-// PreCheck runs the permission gate without executing the action. Returns ""
-// if allowed, or the denial reply text. Called by the handler before showing
-// the destructive confirmation prompt.
 func (e *PurgeExecutor) PreCheck(_ context.Context, action Action) string {
-	purgePermFn := func(_ string, guildPerms int64) bool {
-		return guildPerms&(discordgo.PermissionManageMessages|discordgo.PermissionAdministrator) != 0
-	}
-	return gate(e.discord, e.replies, purgePermFn, "purge", action, "", true, false, false)
+	return gate(e.discord, e.replies, discordgo.PermissionManageMessages, "purge", action, "", true, false, false)
 }

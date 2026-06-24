@@ -32,8 +32,6 @@ func NewPool(ctx context.Context, connString string) (*Pool, error) {
 	return &Pool{Pool: pool}, nil
 }
 
-// ── Guild settings ──────────────────────────────────────────────────────────
-
 type GuildSettings struct {
 	GuildID      string
 	SudoMode     bool

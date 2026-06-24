@@ -78,6 +78,7 @@ func (h *Handler) handlePendingConfirmation(
 			h.logger.Error("handler: deserializing confirmation payload", zap.Error(err))
 			if err := UpdateStatus(ctx, tx, window.ID, "cancelled"); err != nil {
 				h.logger.Error("handler: updating window status to cancelled", zap.Error(err))
+				return false
 			}
 			if err := tx.Commit(ctx); err != nil {
 				h.logger.Error("handler: committing confirmation tx", zap.Error(err))
@@ -90,6 +91,7 @@ func (h *Handler) handlePendingConfirmation(
 			)
 			if err := UpdateStatus(ctx, tx, window.ID, "cancelled"); err != nil {
 				h.logger.Error("handler: updating window status to cancelled", zap.Error(err))
+				return false
 			}
 			if err := tx.Commit(ctx); err != nil {
 				h.logger.Error("handler: committing confirmation tx", zap.Error(err))
@@ -116,18 +118,13 @@ func (h *Handler) handlePendingConfirmation(
 			ctx, wp.Response, meta, verbose, nil,
 		)
 
-		// After execution, clean up the confirmation prompt + the
-		// user's "yes" reply. This leaves only the invoke + the
-		// result in the channel. Purge is the exception — its
-		// executor deletes the confirmation + invoke + yes reply
-		// itself (after the bulk delete completes) so bystanders
-		// see the confirmation while messages are disappearing.
 		if succeeded {
 			h.cleanupConfirmationAfterExecute(meta, wp.Response.Intent)
 		}
 
 		if err := UpdateStatus(ctx, tx, window.ID, "executed"); err != nil {
 			h.logger.Error("handler: updating window status to executed", zap.Error(err))
+			return false
 		}
 		if err := tx.Commit(ctx); err != nil {
 			h.logger.Error("handler: committing confirmation tx", zap.Error(err))
@@ -152,6 +149,7 @@ func (h *Handler) handlePendingConfirmation(
 
 		if err := UpdateStatus(ctx, tx, window.ID, "cancelled"); err != nil {
 			h.logger.Error("handler: updating window status to cancelled", zap.Error(err))
+			return false
 		}
 		if err := tx.Commit(ctx); err != nil {
 			h.logger.Error("handler: committing confirmation tx", zap.Error(err))
@@ -163,6 +161,7 @@ func (h *Handler) handlePendingConfirmation(
 
 		if err := UpdateStatus(ctx, tx, window.ID, "cancelled"); err != nil {
 			h.logger.Error("handler: updating window status to cancelled", zap.Error(err))
+			return false
 		}
 		if err := tx.Commit(ctx); err != nil {
 			h.logger.Error("handler: committing confirmation tx", zap.Error(err))
@@ -178,10 +177,6 @@ func (h *Handler) handleDestructiveConfirmation(
 ) {
 	expiresAt := time.Now().UTC().Add(h.confirmWindowDuration)
 
-	// For purge, pre-scan the channel to give an accurate confirmation.
-	// This tells the user exactly how many messages will be deleted vs
-	// skipped (too old), so they don't confirm "purge 1000" only to find
-	// the channel only has 3 messages.
 	var purgeScan *executor.PurgeScanResult
 	if resp.Intent == "purge_messages" && h.purgeScanFn != nil {
 		count := 100
@@ -204,7 +199,7 @@ func (h *Handler) handleDestructiveConfirmation(
 				zap.Int("skipped", scan.Skipped),
 				zap.Int("requested", scan.Requested),
 			)
-			// If nothing can be deleted, deny without confirmation.
+
 			if scan.Deletable == 0 {
 				noDeletableMsg := h.renderPurgeNothingDeletable(scan.Skipped)
 				if ph != nil {
@@ -261,7 +256,7 @@ func (h *Handler) handleDestructiveConfirmation(
 		h.logger.Error("handler: creating confirmation window", zap.Error(err))
 		return
 	}
-	// Attach confirmation buttons to the message (additive to text-based yes/no).
+
 	components := BuildConfirmButtonComponents(windowID)
 	if h.discord != nil {
 		_, editErr := h.discord.ChannelMessageEditComplex(
@@ -333,7 +328,7 @@ func (h *Handler) handleMultiActionConfirmation(
 		h.logger.Error("handler: creating multi-action window", zap.Error(err))
 		return
 	}
-	// Attach confirmation buttons to the message (additive to text-based yes/no).
+
 	components := BuildConfirmButtonComponents(windowID)
 	if h.discord != nil {
 		_, editErr := h.discord.ChannelMessageEditComplex(
@@ -358,7 +353,7 @@ func (h *Handler) handleMultiActionConfirmation(
 	)
 }
 func buildMultiActionConfirmMessage(resp *llm.LLMResponse, expiresAt time.Time, r replies.Renderer) string {
-	// Build a human-readable summary of the queued actions for the template.
+
 	var b strings.Builder
 	for i, a := range resp.Actions {
 		if i > 0 {
@@ -379,51 +374,22 @@ func buildMultiActionConfirmMessage(resp *llm.LLMResponse, expiresAt time.Time, 
 		})
 	}
 
-	// Fallback when no replies renderer is configured.
 	var fb strings.Builder
 	fmt.Fprintf(&fb, "Confirm %d actions: ", len(resp.Actions))
 	fb.WriteString(actionsSummary)
 	fmt.Fprintf(&fb, "? Reply yes/no. (Expires <t:%d:R>)", expiresAt.Unix())
 	return fb.String()
 }
-func (h *Handler) editConfirmationDone(
-	channelID, messageID, original string,
-) {
-	if h.messageAPI == nil || messageID == "" || original == "" {
-		return
-	}
-	doneText := h.renderConfirmationDone(original)
-	if _, err := h.messageAPI.ChannelMessageEdit(
-		channelID, messageID, doneText,
-	); err != nil {
-		h.logger.Warn("handler: editing confirmation prompt to Done; failed",
-			zap.String("channel_id", channelID),
-			zap.String("message_id", messageID),
-			zap.Error(err),
-		)
-		return
-	}
-	h.logger.Info("handler: confirmation prompt edited; Done",
-		zap.String("channel_id", channelID),
-		zap.String("message_id", messageID),
-	)
-}
 
-// cleanupConfirmationAfterExecute deletes the bot's confirmation prompt and
-// (in the text flow) the user's "yes" reply after a confirmed action has
-// executed. This leaves only the invoke + the result in the channel.
-// Purge is the exception — its executor handles its own cleanup so the
-// confirmation stays visible while the bulk delete is in progress.
 func (h *Handler) cleanupConfirmationAfterExecute(meta executor.ActionMeta, intent string) {
-	// Purge's executor (deleteConfirmationFlowMessages) handles cleanup so
-	// the confirmation stays visible during the bulk delete.
+
 	if intent == "purge_messages" {
 		return
 	}
 	if h.messageAPI == nil {
 		return
 	}
-	// Delete the bot's confirmation prompt.
+
 	if meta.BotMessageID != "" {
 		if err := h.messageAPI.ChannelMessageDelete(meta.ChannelID, meta.BotMessageID); err != nil {
 			h.logger.Debug("handler: cleanup: confirmation prompt already gone",
@@ -438,8 +404,7 @@ func (h *Handler) cleanupConfirmationAfterExecute(meta executor.ActionMeta, inte
 			)
 		}
 	}
-	// Delete the user's "yes" reply (text flow only; button flow has no
-	// separate reply message).
+
 	if meta.UserReplyMessageID != "" {
 		if err := h.messageAPI.ChannelMessageDelete(meta.ChannelID, meta.UserReplyMessageID); err != nil {
 			h.logger.Debug("handler: cleanup: user yes-reply already gone",
@@ -455,18 +420,7 @@ func (h *Handler) cleanupConfirmationAfterExecute(meta executor.ActionMeta, inte
 		}
 	}
 }
-func (h *Handler) renderConfirmationDone(original string) string {
-	if h.replies == nil {
-		return "~~" + original + "~~ Done."
-	}
-	return h.replies.Get("confirmation", "done", map[string]string{
-		"original": original,
-	})
-}
 
-// renderPurgeNothingDeletable renders the message shown when a purge
-// pre-scan finds zero deletable messages (all are older than 14 days).
-// skipped is the count of too-old messages found during the scan.
 func (h *Handler) renderPurgeNothingDeletable(skipped int) string {
 	if h.replies == nil {
 		if skipped > 0 {
@@ -489,15 +443,11 @@ func buildConfirmMessage(
 	if resp.Intent == "purge_messages" {
 		expiresStr := strconv.FormatInt(expiresAt.Unix(), 10)
 
-		// If we have scan results, show accurate counts.
 		if purgeScan != nil {
 			deletable := strconv.Itoa(purgeScan.Deletable)
 			skipped := strconv.Itoa(purgeScan.Skipped)
 			maxAgeDays := "14"
 
-			// If deletable >= requested, the user gets what they asked for.
-			// If deletable < requested, some messages are too old or the
-			// channel has fewer than requested.
 			if purgeScan.Deletable >= purgeScan.Requested {
 				messages := "message"
 				if purgeScan.Deletable != 1 {
@@ -516,7 +466,6 @@ func buildConfirmMessage(
 				})
 			}
 
-			// Deletable < requested — show the partial picture.
 			messages := "message"
 			if purgeScan.Deletable != 1 {
 				messages = "messages"
@@ -536,8 +485,6 @@ func buildConfirmMessage(
 			})
 		}
 
-		// No scan results (scan failed or not configured) — fall back to
-		// the old behavior: show the requested count.
 		const maxPurgeDisplay = 1000
 		deleted := "?"
 		if resp.Parameters.MessageCount != nil {

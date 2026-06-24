@@ -48,8 +48,6 @@ type ActionMeta struct {
 	Sudo               bool
 }
 
-// MemberAPI provides guild member, role, and guild lookup operations used
-// by the permission gate and hierarchy checks.
 type MemberAPI interface {
 	GuildMember(
 		guildID, userID string,
@@ -66,18 +64,15 @@ type MemberAPI interface {
 	BotUserID() string
 }
 
-// BanAPI provides ban create/delete operations.
 type BanAPI interface {
 	GuildBanCreate(guildID, userID, reason string, deleteMessageDays int) error
 	GuildBanDelete(guildID, userID string) error
 }
 
-// KickAPI provides guild member removal.
 type KickAPI interface {
 	GuildMemberDelete(guildID, userID string) error
 }
 
-// MemberEditAPI provides member edit and nickname operations.
 type MemberEditAPI interface {
 	GuildMemberEdit(guildID, userID string, data *discordgo.GuildMemberParams) error
 	GuildMemberNickname(
@@ -86,14 +81,11 @@ type MemberEditAPI interface {
 	) error
 }
 
-// RoleAPI provides role add/remove operations on guild members.
 type RoleAPI interface {
 	GuildMemberRoleAdd(guildID, userID, roleID string) error
 	GuildMemberRoleRemove(guildID, userID, roleID string) error
 }
 
-// ChannelMessageAPI provides channel message listing, bulk deletion, and
-// single message deletion.
 type ChannelMessageAPI interface {
 	ChannelMessages(
 		channelID string,
@@ -104,13 +96,11 @@ type ChannelMessageAPI interface {
 	DeleteMessage(channelID, messageID string) error
 }
 
-// PinAPI provides message pin and unpin operations.
 type PinAPI interface {
 	ChannelMessagePin(channelID, messageID string) error
 	ChannelMessageUnpin(channelID, messageID string) error
 }
 
-// MessageSendAPI provides complex message send operations (e.g. with components).
 type MessageSendAPI interface {
 	ChannelMessageSendComplex(
 		channelID string,
@@ -119,10 +109,6 @@ type MessageSendAPI interface {
 	) (*discordgo.Message, error)
 }
 
-// MessageEditComplexAPI provides complex message edit operations (e.g. to
-// attach or update components on an already-sent message). Used by the snipe
-// executor to attach pagination buttons after the bot message ID — and
-// therefore the button CustomIDs — are known.
 type MessageEditComplexAPI interface {
 	ChannelMessageEditComplex(
 		data *discordgo.MessageEdit,
@@ -130,7 +116,6 @@ type MessageEditComplexAPI interface {
 	) (*discordgo.Message, error)
 }
 
-// VoiceStateAPI provides voice state lookup for voice-class intents.
 type VoiceStateAPI interface {
 	GuildMemberVoiceState(
 		guildID, userID string,
@@ -138,15 +123,11 @@ type VoiceStateAPI interface {
 	) (*discordgo.VoiceState, error)
 }
 
-// BotInfoAPI provides gateway latency and guild count for status/info.
 type BotInfoAPI interface {
 	HeartbeatLatency() time.Duration
 	GuildCount() int
 }
 
-// DiscordAPI is the composite of all Discord API sub-interfaces. The Router
-// and gate-using executors accept this full set; individual executors that
-// only need a subset should accept the narrowest sub-interface.
 type DiscordAPI interface {
 	MemberAPI
 	BanAPI
@@ -185,8 +166,6 @@ type Router struct {
 	snipeUploader     storage.Uploader
 }
 
-// BuildInfo is the version metadata injected at build time via -ldflags -X.
-// Defaults reflect a dev build made without ldflags.
 type BuildInfo struct {
 	Version   string
 	Commit    string
@@ -252,18 +231,12 @@ func NewRouter(
 	return r
 }
 
-// StartBackgroundWorkers starts any long-running goroutines that support
-// executor operation. Must be called once after NewRouter returns, before
-// the bot begins handling events. Symmetric with Stop().
 func (r *Router) StartBackgroundWorkers() {
 	if r.snipeExecutor != nil {
 		r.snipeExecutor.StartPaginationSweeper()
 	}
 }
 
-// Stop halts any background goroutines started by the Router's executors
-// (currently only the snipe pagination TTL sweeper). Should be called
-// during process shutdown to avoid goroutine leaks.
 func (r *Router) Stop() {
 	if r.snipeExecutor != nil {
 		r.snipeExecutor.Stop()
@@ -281,10 +254,7 @@ func (r *Router) Execute(ctx context.Context, action Action) error {
 }
 
 func (r *Router) registerExecutors() {
-	// Create the snipe executor once and assign it to both the executors
-	// map AND the r.snipeExecutor field. Without the field assignment,
-	// SnipePagination/SnipeSourceMsgID/SnipeDeletePage all no-op (they
-	// guard on r.snipeExecutor == nil) and the TTL sweeper never starts.
+
 	snipe := NewSnipeExecutor(r.discord, r.snipeStore, r.snipeUploader, r.replies, r.logger)
 	r.snipeExecutor = snipe
 
@@ -470,16 +440,6 @@ var (
 	_ ResponseExecutor = (*Router)(nil)
 )
 
-// PreCheckPermission runs the permission gate for the given response without
-// executing the action. Returns "" if the actor has permission, or the denial
-// reply text if not. Called by the handler BEFORE showing the destructive
-// confirmation prompt, so users who lack permission get denied immediately
-// instead of clicking "Yes" only to be told they can't.
-//
-// If the executor for the given intent does not implement PreChecker, returns
-// "" (allowed) — the executor's own gate() will catch the denial at execution
-// time. This preserves backward compatibility for executors that haven't been
-// updated yet.
 func (r *Router) PreCheckPermission(ctx context.Context, resp *llm.LLMResponse, meta ActionMeta) string {
 	exec, ok := r.executors[resp.Intent]
 	if !ok {
@@ -496,9 +456,6 @@ func (r *Router) PreCheckPermission(ctx context.Context, resp *llm.LLMResponse, 
 	return pc.PreCheck(ctx, action)
 }
 
-// PurgeScan scans the channel and returns how many messages are deletable
-// (< 14 days) vs too old (>= 14 days), up to maxCount. Used by the handler
-// to show an accurate confirmation prompt before the user clicks "Yes".
 func (r *Router) PurgeScan(ctx context.Context, channelID, sourceMsgID string, maxCount int) (*PurgeScanResult, error) {
 	exec, ok := r.executors["purge_messages"]
 	if !ok {
@@ -511,9 +468,6 @@ func (r *Router) PurgeScan(ctx context.Context, channelID, sourceMsgID string, m
 	return pe.ScanChannel(ctx, channelID, sourceMsgID, maxCount)
 }
 
-// PreCheckActionPermission is the single-action variant for multi-action
-// responses. Each action in a multi-action response is checked independently;
-// the handler denies the entire batch if any action lacks permission.
 func (r *Router) PreCheckActionPermission(ctx context.Context, action Action) string {
 	exec, ok := r.executors[action.Intent]
 	if !ok {
@@ -526,14 +480,6 @@ func (r *Router) PreCheckActionPermission(ctx context.Context, action Action) st
 	return pc.PreCheck(ctx, action)
 }
 
-// SnipePagination returns a function that the interaction handler can call
-// to navigate between deleted message snapshots. Returns nil, empty, nil
-// when at the boundary (no more messages in that direction) or when the
-// in-memory page state for the given bot message ID has expired.
-//
-// The ctx is propagated into the snipe text renderer so that presigned-URL
-// generation (which calls the S3 uploader) respects the interaction's
-// deadline.
 func (r *Router) SnipePagination(ctx context.Context, botMessageID string, direction string) (*storage.Snapshot, string, []discordgo.MessageComponent) {
 	if r.snipeExecutor == nil {
 		return nil, "", nil
@@ -541,8 +487,6 @@ func (r *Router) SnipePagination(ctx context.Context, botMessageID string, direc
 	return r.snipeExecutor.HandlePagination(ctx, botMessageID, direction)
 }
 
-// SnipeSourceMsgID returns the invoking user message ID for a given snipe
-// bot message. Used by the 🗑 Delete button to clean up the original command.
 func (r *Router) SnipeSourceMsgID(botMessageID string) string {
 	if r.snipeExecutor == nil {
 		return ""
@@ -550,9 +494,6 @@ func (r *Router) SnipeSourceMsgID(botMessageID string) string {
 	return r.snipeExecutor.SourceMsgID(botMessageID)
 }
 
-// SnipeDeletePage removes the in-memory page state for a snipe message.
-// Called when the user clicks 🗑 Delete so the state is cleaned up immediately
-// rather than waiting for TTL expiry.
 func (r *Router) SnipeDeletePage(botMessageID string) {
 	if r.snipeExecutor == nil {
 		return

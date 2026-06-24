@@ -10,15 +10,12 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// DB is the narrow interface the Store needs from the connection pool.
 type DB interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 }
 
-// AttachmentMetadata is the per-attachment record stored as JSON in the
-// message_snapshots.attachments column.
 type AttachmentMetadata struct {
 	Filename    string `json:"filename"`
 	ContentType string `json:"content_type"`
@@ -26,7 +23,6 @@ type AttachmentMetadata struct {
 	S3Key       string `json:"s3_key,omitempty"`
 }
 
-// Snapshot represents a row in the message_snapshots table.
 type Snapshot struct {
 	ID          int64
 	GuildID     string
@@ -42,8 +38,6 @@ type Snapshot struct {
 	CreatedAt   time.Time
 }
 
-// Store provides DB operations for message snapshots: insert, mark-deleted,
-// query deleted messages, and retention sweep.
 type Store struct {
 	db DB
 }
@@ -58,10 +52,6 @@ INSERT INTO message_snapshots
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT DO NOTHING`
 
-// InsertSnapshot stores a message snapshot. Attachments are serialised as
-// JSON. If the message was already snapshot (e.g. duplicate event), the
-// insert is silently skipped via ON CONFLICT DO NOTHING (no unique
-// constraint exists today, but the guard is harmless).
 func (s *Store) InsertSnapshot(ctx context.Context, snap Snapshot) error {
 	var attachJSON any
 	if len(snap.Attachments) > 0 {
@@ -83,7 +73,7 @@ func (s *Store) InsertSnapshot(ctx context.Context, snap Snapshot) error {
 		snap.AuthorBot,
 		snap.Content,
 		attachJSON,
-		nil, // embeds — reserved for future use
+		nil,
 		snap.MessageTS,
 	)
 	if err != nil {
@@ -94,7 +84,6 @@ func (s *Store) InsertSnapshot(ctx context.Context, snap Snapshot) error {
 
 const markDeletedSQL = `UPDATE message_snapshots SET deleted_at = NOW() WHERE message_id = $1 AND deleted_at IS NULL`
 
-// MarkDeleted records that a single message has been deleted.
 func (s *Store) MarkDeleted(ctx context.Context, messageID string) error {
 	_, err := s.db.Exec(ctx, markDeletedSQL, messageID)
 	if err != nil {
@@ -105,7 +94,6 @@ func (s *Store) MarkDeleted(ctx context.Context, messageID string) error {
 
 const markBulkDeletedSQL = `UPDATE message_snapshots SET deleted_at = NOW() WHERE message_id = ANY($1) AND deleted_at IS NULL`
 
-// MarkBulkDeleted records that multiple messages have been deleted.
 func (s *Store) MarkBulkDeleted(ctx context.Context, messageIDs []string) error {
 	_, err := s.db.Exec(ctx, markBulkDeletedSQL, messageIDs)
 	if err != nil {
@@ -122,7 +110,6 @@ WHERE channel_id = $1 AND deleted_at IS NOT NULL
 ORDER BY message_ts DESC
 LIMIT $2`
 
-// QueryDeleted returns the N most recently deleted messages in a channel.
 func (s *Store) QueryDeleted(ctx context.Context, channelID string, limit int) ([]Snapshot, error) {
 	rows, err := s.db.Query(ctx, queryDeletedSQL, channelID, limit)
 	if err != nil {
@@ -165,7 +152,6 @@ func (s *Store) QueryDeleted(ctx context.Context, channelID string, limit int) (
 
 const sweepRetentionSQL = `DELETE FROM message_snapshots WHERE created_at < NOW() - ($1 || ' days')::INTERVAL`
 
-// SweepRetention deletes snapshot rows older than the given number of days.
 func (s *Store) SweepRetention(ctx context.Context, days int) (int64, error) {
 	tag, err := s.db.Exec(ctx, sweepRetentionSQL, days)
 	if err != nil {
