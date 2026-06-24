@@ -249,6 +249,32 @@ func main() {
 	session.AddHandler(handler.HandleInteractionCreate)
 	session.AddHandler(handler.OnGuildMemberUpdate)
 
+	// External-audit listeners — gate events from non-Fine sources
+	// (native Discord UI, other moderation bots) into the same mod_actions
+	// table Fine's executors write to. See internal/bot/external_audit.go.
+	messageBuffer := bot.NewMessageBuffer(15)
+	externalAudit := bot.NewExternalAudit(
+		pool,
+		session,
+		messageBuffer,
+		bot.WithExternalAuditLogger(logger),
+	)
+	session.AddHandler(externalAudit.OnMessageCreateBuffered)
+	session.AddHandler(externalAudit.OnGuildBanAdd)
+	session.AddHandler(externalAudit.OnGuildBanRemove)
+	session.AddHandler(externalAudit.OnGuildMemberRemove)
+	session.AddHandler(externalAudit.OnGuildMemberUpdateAudit)
+	session.AddHandler(externalAudit.OnVoiceStateUpdate)
+	session.AddHandler(externalAudit.OnMessageDeleteAudit)
+	session.AddHandler(externalAudit.OnMessageDeleteBulkAudit)
+	session.AddHandler(externalAudit.OnGuildChannelCreate)
+	session.AddHandler(externalAudit.OnGuildChannelUpdate)
+	session.AddHandler(externalAudit.OnGuildChannelDelete)
+	session.AddHandler(externalAudit.OnGuildRoleCreate)
+	session.AddHandler(externalAudit.OnGuildRoleUpdate)
+	session.AddHandler(externalAudit.OnGuildRoleDelete)
+	session.AddHandler(externalAudit.OnGuildUpdate)
+
 	if err := session.Open(); err != nil {
 		logger.Fatal("discord gateway open failed", zap.Error(err))
 	}

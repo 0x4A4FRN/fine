@@ -158,6 +158,21 @@ audit:
     - "Link acquired. Happy reading: https://discord.com/channels/{{.GuildID}}/{{.ChannelID}}/{{.TargetID}}"
     - "This better be important. Message: https://discord.com/channels/{{.GuildID}}/{{.ChannelID}}/{{.TargetID}}"
 
+  details_channel:
+    - "Channel <#{{.TargetID}}> was {{.PastTenseIntent}} by {{.ModeratorID}} ({{.RelativeTime}})."
+    - "{{.ModeratorID}} {{.PastTenseIntent}} <#{{.TargetID}}> ({{.RelativeTime}})."
+    - "The channel <#{{.TargetID}}> — {{.ModeratorID}} {{.PastTenseIntent}} it ({{.RelativeTime}})."
+
+  details_role:
+    - "Role <@&{{.TargetID}}> was {{.PastTenseIntent}} by {{.ModeratorID}} ({{.RelativeTime}})."
+    - "{{.ModeratorID}} {{.PastTenseIntent}} the role <@&{{.TargetID}}> ({{.RelativeTime}})."
+    - "The role <@&{{.TargetID}}> — {{.ModeratorID}} {{.PastTenseIntent}} it ({{.RelativeTime}})."
+
+  details_guild:
+    - "Server settings were {{.PastTenseIntent}} by {{.ModeratorID}} ({{.RelativeTime}})."
+    - "{{.ModeratorID}} {{.PastTenseIntent}} ({{.RelativeTime}})."
+    - "Last server change: {{.ModeratorID}} {{.PastTenseIntent}} ({{.RelativeTime}})."
+
   negation_override:
     - "I think you just told me *not* to do this. Make up your mind, will you?"
     - "You literally just said you didn't want me to do this. Rephrase it if you're serious."

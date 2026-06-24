@@ -144,15 +144,13 @@ func (h *Handler) cloudyReplyText() string {
 }
 func (h *Handler) negationReplyText() string {
 	if h.replies == nil {
-		return negationReplyText
+		return "I think you said you don't want me to do this, so I won't."
 	}
 	return h.replies.Get("audit", "negation_override", nil)
 }
 func (h *Handler) cancelReplyText() string {
 	if h.replies == nil {
-		return confirmReplyText
+		return "Cancelled."
 	}
 	return h.replies.Get("audit", "cancelled", nil)
 }
-
-const negationReplyText = "I think you said you don't want me to do this, so I won't."

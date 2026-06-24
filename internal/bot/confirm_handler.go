@@ -16,8 +16,6 @@ import (
 	"github.com/0x4A4FRN/fine/internal/replies"
 )
 
-const confirmReplyText = "Cancelled."
-
 func isReplyToConfirmation(m *discordgo.MessageCreate, windowBotMsgID string) bool {
 	if windowBotMsgID == "" {
 		return false

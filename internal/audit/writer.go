@@ -29,6 +29,18 @@ type ModAction struct {
 	ExecutedAt      time.Time
 }
 
+func marshalParameters(p any) (*string, error) {
+	if p == nil {
+		return nil, nil
+	}
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return nil, fmt.Errorf("audit: marshaling parameters: %w", err)
+	}
+	s := string(raw)
+	return &s, nil
+}
+
 const insertSQL = `
 INSERT INTO mod_actions (
     guild_id,
@@ -45,15 +57,9 @@ INSERT INTO mod_actions (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 
 func WriteAction(ctx context.Context, pool DB, action ModAction) error {
-	paramsJSON, err := json.Marshal(action.Parameters)
+	params, err := marshalParameters(action.Parameters)
 	if err != nil {
-		return fmt.Errorf("audit: marshaling parameters: %w", err)
-	}
-
-	var params *string
-	if action.Parameters != nil {
-		s := string(paramsJSON)
-		params = &s
+		return fmt.Errorf("audit: writing mod_action: %w", err)
 	}
 
 	var reason *string

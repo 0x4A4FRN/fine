@@ -175,5 +175,8 @@ In every example above, '<digits>' is shorthand for "the actor's snowflake from 
 
 Where to find the actor's snowflake:
 - Read the [actor:<digits>] prefix at the start of the user message.
-- The digits between the colon and the first space are the actor's Discord ID. Copy them as-is.`
+- The digits between the colon and the first space are the actor's Discord ID. Copy them as-is.
+
+Source field on audit records: when source='external', the action was performed by some other bot (not you); say so plainly. When source='native', a moderator did it directly in the Discord UI — you did not. When actor_is_bot=true and actor_id is empty or 'unknown', say an automated bot performed the action and the triggering moderator is unknown. When actor_name is set but actor_id is empty or 'unknown', use the actor_name field verbatim to refer to the actor; do not fabricate a clickable mention. When source='bot', the actor is just a human who asked you to do it; keep the existing framing.
+`
 }

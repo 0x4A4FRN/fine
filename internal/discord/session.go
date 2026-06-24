@@ -22,7 +22,15 @@ func NewSession(token string) (*Session, error) {
 
 	dg.Identify.Intents = discordgo.IntentsGuilds |
 		discordgo.IntentsGuildMessages |
-		discordgo.IntentsMessageContent
+		discordgo.IntentsMessageContent |
+		discordgo.IntentsGuildMembers |
+		discordgo.IntentsGuildBans
+
+	// Explicit, even though both are v0.29.0 defaults — drives BeforeUpdate
+	// population on GuildMemberUpdate events and the cached member list we
+	// use to resolve username → snowflake when parsing audit-log reasons.
+	dg.State.TrackMembers = true
+	dg.StateEnabled = true
 
 	return &Session{Session: dg}, nil
 }
