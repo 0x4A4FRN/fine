@@ -50,12 +50,11 @@ func (h *Handler) handleAuditLookup(
 		data = audit.BuildTemplateData(result)
 	}
 
-	replyText := renderAuditReplyFallback(templateName, data)
+	replyText := "I don't have a record of that."
 	if h.replies != nil {
 		rendered, err := h.replies.Render(templateName, data)
 		if err != nil {
 			h.logger.Error("handler: rendering audit reply", zap.Error(err))
-			// Fall through with the fallback text already set above.
 		} else {
 			replyText = rendered
 		}

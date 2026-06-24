@@ -3,6 +3,7 @@ package llm
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -109,7 +110,7 @@ func ValidateLLMResponse(resp *LLMResponse, logger *zap.Logger) error {
 	if resp.Intent == "" {
 		return nil
 	}
-	if !contains(suggestedIntents, resp.Intent) {
+	if !slices.Contains(suggestedIntents, resp.Intent) {
 		logger.Warn("llm: unknown intent coerced to conversational",
 			zap.String("intent", resp.Intent),
 		)
@@ -221,7 +222,7 @@ func validateTargets(targets []Target) error {
 		)
 	}
 	for i, t := range targets {
-		if !contains(validTargetTypes, t.Type) {
+		if !slices.Contains(validTargetTypes, t.Type) {
 			return fmt.Errorf(
 				"target[%d]: invalid type %q",
 				i, t.Type,
@@ -240,7 +241,7 @@ func validateTargets(targets []Target) error {
 func filterValidTargets(targets []Target, logger *zap.Logger) []Target {
 	out := make([]Target, 0, len(targets))
 	for _, t := range targets {
-		if !contains(validTargetTypes, t.Type) {
+		if !slices.Contains(validTargetTypes, t.Type) {
 			logger.Warn("llm: dropping target with unknown type",
 				zap.String("type", t.Type),
 				zap.String("id", t.ID),
@@ -323,11 +324,11 @@ func isBrokenAuditLookup(q *AuditQuery) bool {
 	if q == nil {
 		return true
 	}
-	if q.Info == "" || !contains(validAuditInfoValues, q.Info) {
+	if q.Info == "" || !slices.Contains(validAuditInfoValues, q.Info) {
 		return true
 	}
 	actionUsable := q.Action != nil && *q.Action != "" &&
-		contains(suggestedIntents, *q.Action)
+		slices.Contains(suggestedIntents, *q.Action)
 	if actionUsable {
 		return false
 	}
@@ -337,7 +338,7 @@ func isBrokenAuditLookup(q *AuditQuery) bool {
 }
 
 func validateAuditQuery(q *AuditQuery, logger *zap.Logger) error {
-	if !contains(validAuditInfoValues, q.Info) {
+	if !slices.Contains(validAuditInfoValues, q.Info) {
 		return fmt.Errorf("invalid info %q", q.Info)
 	}
 	if q.Action != nil {
@@ -349,7 +350,7 @@ func validateAuditQuery(q *AuditQuery, logger *zap.Logger) error {
 			)
 			*q.Action = normalized
 		}
-		if !contains(suggestedIntents, *q.Action) {
+		if !slices.Contains(suggestedIntents, *q.Action) {
 			return fmt.Errorf("invalid action filter %q", *q.Action)
 		}
 	}
@@ -360,7 +361,7 @@ func validateAuditQuery(q *AuditQuery, logger *zap.Logger) error {
 }
 
 func validateAction(a *Action, index int) error {
-	if !contains(suggestedIntents, a.Intent) {
+	if !slices.Contains(suggestedIntents, a.Intent) {
 		return fmt.Errorf(
 			"actions[%d]: invalid intent %q",
 			index, a.Intent,
@@ -381,15 +382,6 @@ func targetTypes(targets []Target) []string {
 		types = append(types, strconv.Quote(t.Type))
 	}
 	return types
-}
-
-func contains[T comparable](slice []T, target T) bool {
-	for _, v := range slice {
-		if v == target {
-			return true
-		}
-	}
-	return false
 }
 
 func IsValidSnowflake(id string) bool {

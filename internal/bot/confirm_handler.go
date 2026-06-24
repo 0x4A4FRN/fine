@@ -176,7 +176,7 @@ func (h *Handler) handleDestructiveConfirmation(
 	resp *llm.LLMResponse,
 	ph *placeholder,
 ) {
-	expiresAt := h.clock.Now().UTC().Add(h.confirmWindowDuration)
+	expiresAt := time.Now().UTC().Add(h.confirmWindowDuration)
 
 	// For purge, pre-scan the channel to give an accurate confirmation.
 	// This tells the user exactly how many messages will be deleted vs
@@ -291,7 +291,7 @@ func (h *Handler) handleMultiActionConfirmation(
 	resp *llm.LLMResponse,
 	ph *placeholder,
 ) {
-	expiresAt := h.clock.Now().UTC().Add(h.confirmWindowDuration)
+	expiresAt := time.Now().UTC().Add(h.confirmWindowDuration)
 	confirmMsg := buildMultiActionConfirmMessage(resp, expiresAt, h.replies)
 
 	wp := WindowPayload{

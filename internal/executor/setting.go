@@ -141,14 +141,6 @@ func (e *SettingExecutor) checkPermission(action Action) string {
 	return ""
 }
 
-// PreCheck runs the permission gate without executing the setting change.
-// Returns "" if allowed, or the denial reply text. toggle_setting is not
-// destructive so this is not currently called by the handler's confirmation
-// pre-check, but the method exists for future use and testability.
-func (e *SettingExecutor) PreCheck(_ context.Context, action Action) string {
-	return e.checkPermission(action)
-}
-
 // settingDisplay maps the machine-readable internal setting key to a friendly
 // label that we hand to YAML templates for user-facing rendering. Internal
 // keys (`verbose_error`, `sudo_mode`) stay stable everywhere they're stored,

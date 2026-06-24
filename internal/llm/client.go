@@ -47,14 +47,6 @@ func WithBaseURL(url string) Option {
 	}
 }
 
-func WithAPIKey(key string) Option {
-	return func(c *OpenAIClient) {
-		if key != "" {
-			c.apiKeys = []string{key}
-		}
-	}
-}
-
 func WithAPIKeys(keys []string, rotateEvery int) Option {
 	return func(c *OpenAIClient) {
 		c.apiKeys = keys
@@ -65,12 +57,6 @@ func WithAPIKeys(keys []string, rotateEvery int) Option {
 func WithModel(model string) Option {
 	return func(c *OpenAIClient) {
 		c.model = model
-	}
-}
-
-func WithHTTPClient(client *http.Client) Option {
-	return func(c *OpenAIClient) {
-		c.httpClient = client
 	}
 }
 

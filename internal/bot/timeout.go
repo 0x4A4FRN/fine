@@ -116,7 +116,7 @@ func (h *Handler) recordTimeoutTransition(
 	case "timeout":
 		h.timeoutTracker.Forget(meta.GuildID, userID)
 		if resp.Parameters.DurationSeconds != nil {
-			until := h.clock.Now().UTC().Add(
+			until := time.Now().UTC().Add(
 				time.Duration(*resp.Parameters.DurationSeconds) * time.Second,
 			)
 			h.timeoutTracker.Track(
@@ -188,7 +188,7 @@ func (h *Handler) sweepExpiredTimeouts() {
 	if h.timeoutTracker == nil || h.messageAPI == nil || h.replies == nil || h.auditDB == nil {
 		return
 	}
-	now := h.clock.Now().UTC().Unix()
+	now := time.Now().UTC().Unix()
 	for _, e := range h.timeoutTracker.Snapshot() {
 		if e.ExpiresAtUnix <= 0 || now < e.ExpiresAtUnix {
 			continue
@@ -230,7 +230,7 @@ func (h *Handler) settleExpiredEntry(guildID, userID, reason string) {
 		templateKey = "ended"
 		vars = map[string]string{
 			"user_name":     "<@" + userID + ">",
-			"end_timestamp": strconv.FormatInt(h.clock.Now().UTC().Unix(), 10),
+			"end_timestamp": strconv.FormatInt(time.Now().UTC().Unix(), 10),
 		}
 	}
 	editText := h.replies.Get("timeout_reply", templateKey, vars)
@@ -254,7 +254,7 @@ func (h *Handler) settleExpiredEntry(guildID, userID, reason string) {
 			TargetType: "user",
 			Intent:     "timeout_ended",
 			Reason:     reason,
-			ExecutedAt: h.clock.Now().UTC(),
+			ExecutedAt: time.Now().UTC(),
 		}); err != nil {
 			h.logger.Warn("handler: timeout-end audit write failed",
 				zap.String("user_id", userID),
@@ -311,7 +311,7 @@ func (h *Handler) OnGuildMemberUpdate(_ *discordgo.Session, m *discordgo.GuildMe
 	}
 	stillTimedOut := currentMember.CommunicationDisabledUntil != nil &&
 		!currentMember.CommunicationDisabledUntil.IsZero() &&
-		currentMember.CommunicationDisabledUntil.After(h.clock.Now().UTC())
+		currentMember.CommunicationDisabledUntil.After(time.Now().UTC())
 	if stillTimedOut {
 		h.logger.Debug("handler: GUILD_MEMBER_UPDATE; REST confirms timeout still active; deferring to polling sweep",
 			zap.String("guild_id", m.GuildID),

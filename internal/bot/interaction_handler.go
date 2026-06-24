@@ -100,7 +100,7 @@ func (h *Handler) handleSnipePagination(i *discordgo.InteractionCreate, directio
 	ctx, cancel := context.WithTimeout(context.Background(), interactionTimeout)
 	defer cancel()
 
-	snap, text, components := h.snipePaginationFn(ctx, i.ChannelID, botMsgID, direction)
+	snap, text, components := h.snipePaginationFn(ctx, botMsgID, direction)
 	if snap == nil {
 		// State expired or unexpected boundary — acknowledge with a deferred
 		// update so the interaction doesn't error, and leave the message as-is.

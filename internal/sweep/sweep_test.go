@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/bwmarrin/discordgo"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"go.uber.org/zap"
@@ -98,7 +99,7 @@ type mockEditor struct {
 	editErr error
 }
 
-func (e *mockEditor) ChannelMessageEdit(channelID, msgID, content string, _ ...any) (any, error) {
+func (e *mockEditor) ChannelMessageEdit(channelID, msgID, content string, _ ...discordgo.RequestOption) (*discordgo.Message, error) {
 	e.calls = append(e.calls, struct{ channelID, msgID, content string }{channelID, msgID, content})
 	return nil, e.editErr
 }

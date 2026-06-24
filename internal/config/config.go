@@ -20,13 +20,12 @@ type Config struct {
 	// as "Authorization: Bearer <secret>" header.
 	LogStreamSecret string
 
-	LLMBaseURL             string
-	LLMAPIKeys             []string
-	LLMKeyRotateEvery      int
-	LLMModel               string
-	LLMTimeout             time.Duration
-	LLMMaxRetries          int
-	LLMConfidenceThreshold float64
+	LLMBaseURL        string
+	LLMAPIKeys        []string
+	LLMKeyRotateEvery int
+	LLMModel          string
+	LLMTimeout        time.Duration
+	LLMMaxRetries     int
 
 	ConversationWindowMinutes      int
 	ConversationRetentionDays      int
@@ -86,8 +85,6 @@ func Load() (*Config, error) {
 	cfg.LLMTimeout = time.Duration(timeoutMs) * time.Millisecond
 
 	cfg.LLMMaxRetries = envIntOr("LLM_MAX_RETRIES", 2)
-
-	cfg.LLMConfidenceThreshold = envFloatOr("LLM_CONFIDENCE_THRESHOLD", 0.7)
 
 	cfg.LLMKeyRotateEvery = envIntOr("LLM_KEY_ROTATE_EVERY", 25)
 

@@ -134,9 +134,9 @@ func TestRoute_KnownIntent_CallsExecutor(t *testing.T) {
 	r := newTestRouter(map[string]Executor{"ban": stub})
 
 	action := Action{
-		Intent:    "ban",
-		GuildID:   "guild-1",
-		ActorID:   "actor-1",
+		Intent:  "ban",
+		GuildID: "guild-1",
+		ActorID: "actor-1",
 	}
 	if err := r.Route(context.Background(), action); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -298,7 +298,7 @@ func TestExecuteResponse_MultiAction_AllFail_ReturnsMultiError(t *testing.T) {
 
 func TestSnipePagination_NilExecutor_ReturnsNil(t *testing.T) {
 	r := &Router{logger: zap.NewNop()} // snipeExecutor intentionally nil
-	snap, text, components := r.SnipePagination(context.Background(), "chan", "msg", "next")
+	snap, text, components := r.SnipePagination(context.Background(), "msg", "next")
 	if snap != nil {
 		t.Errorf("expected nil snapshot, got %+v", snap)
 	}

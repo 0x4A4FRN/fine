@@ -78,7 +78,10 @@ func TestParseSnipeCount_BareSnipe_ReturnsOne(t *testing.T) {
 }
 
 func TestParseSnipeCount_WithCount(t *testing.T) {
-	tests := []struct{ input string; want int }{
+	tests := []struct {
+		input string
+		want  int
+	}{
 		{"snipe 1", 1},
 		{"snipe 5", 5},
 		{"snipe 25", 25},

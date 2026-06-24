@@ -2,7 +2,6 @@ package discord
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -11,15 +10,7 @@ type Session struct {
 	*discordgo.Session
 }
 
-type Option func(*Session)
-
-func WithIntents(intents discordgo.Intent) Option {
-	return func(s *Session) {
-		s.Identify.Intents = intents
-	}
-}
-
-func NewSession(token string, opts ...Option) (*Session, error) {
+func NewSession(token string) (*Session, error) {
 	if token == "" {
 		return nil, fmt.Errorf("discord: token must not be empty")
 	}
@@ -33,11 +24,7 @@ func NewSession(token string, opts ...Option) (*Session, error) {
 		discordgo.IntentsGuildMessages |
 		discordgo.IntentsMessageContent
 
-	s := &Session{Session: dg}
-	for _, opt := range opts {
-		opt(s)
-	}
-	return s, nil
+	return &Session{Session: dg}, nil
 }
 
 func (s *Session) DeleteMessage(channelID, messageID string) error {
@@ -144,10 +131,6 @@ func (s *Session) ChannelMessagesBulkDelete(
 			len(messageIDs), channelID, err)
 	}
 	return nil
-}
-
-func (s *Session) HeartbeatLatency() time.Duration {
-	return s.Session.HeartbeatLatency()
 }
 
 func (s *Session) GuildCount() int {

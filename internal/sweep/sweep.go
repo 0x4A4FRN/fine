@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
 
 	"github.com/jackc/pgx/v5"
@@ -21,7 +22,7 @@ type DB interface {
 }
 
 type MessageEditor interface {
-	ChannelMessageEdit(channelID, messageID, content string, options ...any) (any, error)
+	ChannelMessageEdit(channelID, messageID, content string, options ...discordgo.RequestOption) (*discordgo.Message, error)
 }
 
 type expiredWindow struct {

@@ -261,8 +261,7 @@ func main() {
 	}
 	logger.Info("discord gateway opened")
 
-	sweepEditor := &discordMessageEditor{session: session}
-	go sweep.Start(ctx, pool, sweepEditor, replyRenderer, logger)
+	go sweep.Start(ctx, pool, session, replyRenderer, logger)
 
 	// Polling timer for natural timeout expiry. The GuildMemberUpdate
 	// listener is best-effort; this ticker is the authoritative source
@@ -272,7 +271,7 @@ func main() {
 
 	go web.Serve(ctx, ":8080", logger, logBroadcaster, cfg.LogStreamSecret)
 
-	// Daily retention sweepers — delete old conversation and audit data.
+	// Daily retention sweepers — consolidated into one goroutine.
 	go func() {
 		ticker := time.NewTicker(24 * time.Hour)
 		defer ticker.Stop()
@@ -281,60 +280,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				_, err := pool.Exec(ctx,
-					"DELETE FROM conversation_messages WHERE created_at < NOW() - $1 * INTERVAL '1 day'",
-					cfg.ConversationRetentionDays,
-				)
-				if err != nil {
-					logger.Error("main: conversation message retention", zap.Error(err))
-				}
-				_, err = pool.Exec(ctx,
-					"DELETE FROM conversations WHERE last_active_at < NOW() - $1 * INTERVAL '1 day'",
-					cfg.ConversationRetentionDays,
-				)
-				if err != nil {
-					logger.Error("main: conversation retention", zap.Error(err))
-				}
-			}
-		}
-	}()
-
-	go func() {
-		ticker := time.NewTicker(24 * time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				_, err := pool.Exec(ctx,
-					"DELETE FROM mod_actions WHERE executed_at < NOW() - $1 * INTERVAL '1 day'",
-					cfg.AuditRetentionDays,
-				)
-				if err != nil {
-					logger.Error("main: audit retention", zap.Error(err))
-				}
-			}
-		}
-	}()
-
-	// ── Snipe retention sweeper ─────────────────────────────────
-	go func() {
-		ticker := time.NewTicker(24 * time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				deleted, err := snapshotStore.SweepRetention(ctx, cfg.SnipeRetentionDays)
-				if err != nil {
-					logger.Error("main: snipe retention", zap.Error(err))
-				} else if deleted > 0 {
-					logger.Info("main: snipe retention sweep",
-						zap.Int64("deleted", deleted),
-					)
-				}
+				retentionSweep(ctx, pool, snapshotStore, cfg, logger)
 			}
 		}
 	}()
@@ -353,17 +299,46 @@ func main() {
 	router.Stop()
 }
 
-type discordMessageEditor struct {
-	session *discord.Session
-}
-
-var _ sweep.MessageEditor = (*discordMessageEditor)(nil)
-
-func (e *discordMessageEditor) ChannelMessageEdit(
-	channelID, messageID, content string,
-	_ ...any,
-) (any, error) {
-	return e.session.ChannelMessageEdit(channelID, messageID, content)
+// retentionSweep runs all daily retention sweeps in sequence.
+func retentionSweep(ctx context.Context, pool *db.Pool, snapshotStore *storage.Store, cfg *config.Config, logger *zap.Logger) {
+	sweeps := []struct {
+		label string
+		fn    func() error
+	}{
+		{
+			"conversation_messages",
+			func() error {
+				_, err := pool.Exec(ctx, "DELETE FROM conversation_messages WHERE created_at < NOW() - $1 * INTERVAL '1 day'", cfg.ConversationRetentionDays)
+				return err
+			},
+		},
+		{
+			"conversations",
+			func() error {
+				_, err := pool.Exec(ctx, "DELETE FROM conversations WHERE last_active_at < NOW() - $1 * INTERVAL '1 day'", cfg.ConversationRetentionDays)
+				return err
+			},
+		},
+		{
+			"mod_actions",
+			func() error {
+				_, err := pool.Exec(ctx, "DELETE FROM mod_actions WHERE executed_at < NOW() - $1 * INTERVAL '1 day'", cfg.AuditRetentionDays)
+				return err
+			},
+		},
+	}
+	for _, s := range sweeps {
+		if err := s.fn(); err != nil {
+			logger.Error("main: retention sweep failed", zap.String("table", s.label), zap.Error(err))
+		}
+	}
+	// Snipe retention uses a different API (returns count).
+	deleted, err := snapshotStore.SweepRetention(ctx, cfg.SnipeRetentionDays)
+	if err != nil {
+		logger.Error("main: snipe retention", zap.Error(err))
+	} else if deleted > 0 {
+		logger.Info("main: snipe retention sweep", zap.Int64("deleted", deleted))
+	}
 }
 
 var _ audit.DB = (*db.Pool)(nil)

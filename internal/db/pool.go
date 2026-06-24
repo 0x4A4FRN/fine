@@ -32,10 +32,6 @@ func NewPool(ctx context.Context, connString string) (*Pool, error) {
 	return &Pool{Pool: pool}, nil
 }
 
-func (p *Pool) Close() {
-	p.Pool.Close()
-}
-
 // ── Guild settings ──────────────────────────────────────────────────────────
 
 type GuildSettings struct {

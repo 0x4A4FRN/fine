@@ -45,24 +45,26 @@ LDFLAGS := -s -w \
     -X 'main.BuildDate=$(BUILD_DATE)' \
     -X 'main.GoVersionStr=$(GO_VERSION)'
 
+DEV_LDFLAGS := -s -w \
+    -X 'main.Version=dev-$(COMMIT)' \
+    -X 'main.Commit=$(COMMIT)' \
+    -X 'main.BuildDate=$(BUILD_DATE)' \
+    -X 'main.GoVersionStr=$(GO_VERSION)'
+
 .PHONY: build release dev run clean
 
 build: release ## Alias for the release build (uses git tag when present).
 
 release: ## Build with full version stamp; uses git tag if available, else dev-<sha>.
-	@mkdir -p $(BIN_DIR)
-	go build -tags netgo -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/fine
+		@mkdir -p $(BIN_DIR)
+		go build -tags netgo -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/fine
 
 dev: ## Build with version=dev-<sha>; faster, smaller surface.
-	@mkdir -p $(BIN_DIR)
-	go build -tags netgo -ldflags "-s -w \
-	    -X 'main.Version=dev-$(COMMIT)' \
-	    -X 'main.Commit=$(COMMIT)' \
-	    -X 'main.BuildDate=$(BUILD_DATE)' \
-	    -X 'main.GoVersionStr=$(GO_VERSION)'" -o $(BIN) ./cmd/fine
+		@mkdir -p $(BIN_DIR)
+		go build -tags netgo -ldflags "$(DEV_LDFLAGS)" -o $(BIN) ./cmd/fine
 
 run: dev ## Build the dev binary and run it.
-	./$(BIN)
+	    ./$(BIN)
 
 clean: ## Remove built artifacts.
-	rm -rf $(BIN_DIR)
+	    rm -rf $(BIN_DIR)

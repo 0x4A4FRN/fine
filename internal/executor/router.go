@@ -533,10 +533,8 @@ func (r *Router) PreCheckActionPermission(ctx context.Context, action Action) st
 //
 // The ctx is propagated into the snipe text renderer so that presigned-URL
 // generation (which calls the S3 uploader) respects the interaction's
-// deadline. channelID is retained on the signature for interface symmetry
-// with future pagination sources but is not currently used — the page
-// state is keyed by botMessageID alone.
-func (r *Router) SnipePagination(ctx context.Context, channelID string, botMessageID string, direction string) (*storage.Snapshot, string, []discordgo.MessageComponent) {
+// deadline.
+func (r *Router) SnipePagination(ctx context.Context, botMessageID string, direction string) (*storage.Snapshot, string, []discordgo.MessageComponent) {
 	if r.snipeExecutor == nil {
 		return nil, "", nil
 	}

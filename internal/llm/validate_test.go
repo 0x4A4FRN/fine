@@ -139,8 +139,8 @@ func TestValidateLLMResponse_PurgeFiltersInvalidTargets(t *testing.T) {
 		Confidence: 0.9,
 		Targets: []Target{
 			{Type: "message", ID: "111111111111111111"},
-			{Type: "alien", ID: "222222222222222222"},   // bad type → filtered
-			{Type: "user", ID: "not-a-snowflake"},       // bad ID   → filtered
+			{Type: "alien", ID: "222222222222222222"}, // bad type → filtered
+			{Type: "user", ID: "not-a-snowflake"},     // bad ID   → filtered
 		},
 	}
 	if err := ValidateLLMResponse(resp, nil); err != nil {

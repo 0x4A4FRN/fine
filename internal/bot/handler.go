@@ -21,16 +21,6 @@ import (
 
 const handlerTimeout = 30 * time.Second
 
-// Clock abstracts time.Now() for testability. The default realClock calls
-// time.Now(); tests can inject a fake clock via WithClock.
-type Clock interface {
-	Now() time.Time
-}
-
-type realClock struct{}
-
-func (realClock) Now() time.Time { return time.Now() }
-
 // cacheHitThreshold is now a configurable field on Handler (see WithCacheHitThreshold).
 
 // placeholder is the live "Thinking…" message the bot posts immediately
@@ -163,7 +153,7 @@ type Handler struct {
 
 	storageStore               *storage.Store
 	storageUploader            storage.Uploader
-	snipePaginationFn          func(ctx context.Context, channelID string, botMessageID string, direction string) (*storage.Snapshot, string, []discordgo.MessageComponent)
+	snipePaginationFn          func(ctx context.Context, botMessageID string, direction string) (*storage.Snapshot, string, []discordgo.MessageComponent)
 	snipeSourceMsgIDFn         func(botMessageID string) string
 	snipeDeletePageFn          func(botMessageID string)
 	preCheckPermissionFn       func(ctx context.Context, resp *llm.LLMResponse, meta executor.ActionMeta) string
@@ -172,7 +162,6 @@ type Handler struct {
 
 	cacheHitThreshold     float64
 	confirmWindowDuration time.Duration
-	clock                 Clock
 }
 
 // TrySettle atomically marks an entry as settled and reports whether the
@@ -200,30 +189,16 @@ func WithDiscord(s DiscordSessionAPI) Option {
 	return func(h *Handler) {
 		h.discord = s
 		// If the session also satisfies DiscordMessageAPI (the real
-		// discord.Session does), wire it as the message API too. Tests
-		// that want to inject only a partial mock can call
-		// WithDiscordMessageAPI separately.
+		// discord.Session does), wire it as the message API too.
 		if ma, ok := s.(DiscordMessageAPI); ok {
 			h.messageAPI = ma
 		}
 	}
 }
 
-func WithDiscordMessageAPI(api DiscordMessageAPI) Option {
-	return func(h *Handler) {
-		h.messageAPI = api
-	}
-}
-
 func WithExecutor(e executor.ResponseExecutor) Option {
 	return func(h *Handler) {
 		h.executor = e
-	}
-}
-
-func WithBotID(id string) Option {
-	return func(h *Handler) {
-		h.botID = id
 	}
 }
 
@@ -281,12 +256,6 @@ func WithConfirmWindowDuration(d time.Duration) Option {
 	}
 }
 
-func WithClock(c Clock) Option {
-	return func(h *Handler) {
-		h.clock = c
-	}
-}
-
 func WithStorageStore(s *storage.Store) Option {
 	return func(h *Handler) {
 		h.storageStore = s
@@ -299,7 +268,7 @@ func WithStorageUploader(u storage.Uploader) Option {
 	}
 }
 
-func WithSnipePaginationFn(fn func(ctx context.Context, channelID string, botMessageID string, direction string) (*storage.Snapshot, string, []discordgo.MessageComponent)) Option {
+func WithSnipePaginationFn(fn func(ctx context.Context, botMessageID string, direction string) (*storage.Snapshot, string, []discordgo.MessageComponent)) Option {
 	return func(h *Handler) {
 		h.snipePaginationFn = fn
 	}
@@ -341,7 +310,6 @@ func NewHandler(provider llm.Provider, opts ...Option) *Handler {
 		systemPrompt:   llm.DefaultSystemPrompt(),
 		timeoutTracker: newTimeoutTracker(),
 		logger:         zap.NewNop(),
-		clock:          realClock{},
 	}
 
 	for _, opt := range opts {

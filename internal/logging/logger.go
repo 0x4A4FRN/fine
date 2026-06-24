@@ -23,14 +23,6 @@ func ParseLevel(s string) (zapcore.Level, error) {
 	return lvl, nil
 }
 
-func New(level zapcore.Level) (*zap.Logger, error) {
-	cfg := zap.NewProductionConfig()
-	cfg.Level = zap.NewAtomicLevelAt(level)
-	cfg.EncoderConfig.TimeKey = "ts"
-	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	return cfg.Build()
-}
-
 func NewDevelopment(level zapcore.Level) (*zap.Logger, error) {
 	cfg := zap.NewDevelopmentConfig()
 	cfg.Level = zap.NewAtomicLevelAt(level)

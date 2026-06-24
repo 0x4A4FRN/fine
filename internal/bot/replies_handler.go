@@ -1,11 +1,9 @@
 package bot
 
 import (
-	"fmt"
 	"strconv"
 	"time"
 
-	"github.com/0x4A4FRN/fine/internal/audit"
 	"github.com/0x4A4FRN/fine/internal/llm"
 )
 
@@ -137,33 +135,6 @@ func firstTargetByType(targets []llm.Target, ty string) string {
 		}
 	}
 	return ""
-}
-func renderAuditReplyFallback(templateName string, data audit.TemplateData) string {
-	switch templateName {
-	case "audit.no_record":
-		return "I don't have a record of that."
-	case "audit.actor_with_target":
-		return fmt.Sprintf("Last time <@%s> was %s, it was <@%s>.",
-			data.TargetID, data.PastTenseIntent, data.ModeratorID)
-	case "audit.actor_no_target":
-		return fmt.Sprintf("The last %s was <@%s> by <@%s>.",
-			data.IntentNoun, data.TargetID, data.ModeratorID)
-	case "audit.reason_with_reason":
-		return fmt.Sprintf("Because <@%s> said they were %s.",
-			data.ModeratorID, data.Reason)
-	case "audit.reason_without_reason":
-		return fmt.Sprintf("I don't know. <@%s> didn't say why.", data.ModeratorID)
-	case "audit.details_with_reason":
-		return fmt.Sprintf("<@%s> was %s by <@%s> for %s (%s).",
-			data.TargetID, data.PastTenseIntent, data.ModeratorID,
-			data.Reason, data.RelativeTime)
-	case "audit.details_without_reason":
-		return fmt.Sprintf("<@%s> was %s by <@%s> (%s). They didn't say why.",
-			data.TargetID, data.PastTenseIntent, data.ModeratorID,
-			data.RelativeTime)
-	default:
-		return "I don't have a record of that."
-	}
 }
 func (h *Handler) cloudyReplyText() string {
 	if h.replies == nil {
