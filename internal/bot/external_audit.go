@@ -845,8 +845,9 @@ func (e *ExternalAudit) OnMessageDeleteAudit(s *discordgo.Session, m *discordgo.
 
 	// Author resolution: prefer the embedded Message (a snapshot from the
 	// state cache taken before discordgo removed the entry), then fall back
-	// to a live state lookup for the rare case where the snapshot lacks the
-	// author.
+	// to a live state lookup, then fall back to the MessageBuffer (which
+	// tracks bot-sent messages that discordgo never adds to state because
+	// ChannelMessageSendComplex doesn't auto-cache).
 	authorID := ""
 	if m.Message.Author != nil {
 		authorID = m.Message.Author.ID
@@ -854,6 +855,11 @@ func (e *ExternalAudit) OnMessageDeleteAudit(s *discordgo.Session, m *discordgo.
 	if authorID == "" && s != nil {
 		if msg, err := s.State.Message(m.ChannelID, msgID); err == nil && msg != nil && msg.Author != nil {
 			authorID = msg.Author.ID
+		}
+	}
+	if authorID == "" && e.buffer != nil {
+		if id, _ := e.buffer.LookupAuthor(msgID); id != "" {
+			authorID = id
 		}
 	}
 
@@ -865,6 +871,21 @@ func (e *ExternalAudit) OnMessageDeleteAudit(s *discordgo.Session, m *discordgo.
 	// for a bot deleting its own messages), leaving actor_id="unknown" and
 	// spamming the "no audit entry after retries" log line.
 	if authorID == e.botUserID() {
+		return
+	}
+
+	// If the author is still unknown after all fallbacks, the message was
+	// either a bot message that was evicted from the ring buffer (high-
+	// traffic channel) or an old message beyond the buffer's window. In
+	// either case, Discord will not write an audit-log entry for it, so
+	// inserting a row just creates noise: 10s of polling followed by
+	// "no audit entry after retries." Skip silently.
+	if authorID == "" {
+		e.logger.Debug("external_audit: message delete skipped; author unresolvable",
+			zap.String("guild_id", m.GuildID),
+			zap.String("channel_id", m.ChannelID),
+			zap.String("message_id", msgID),
+		)
 		return
 	}
 
@@ -900,12 +921,24 @@ func (e *ExternalAudit) OnMessageDeleteAudit(s *discordgo.Session, m *discordgo.
 }
 
 func (e *ExternalAudit) OnMessageDeleteBulkAudit(
-	_ *discordgo.Session,
+	s *discordgo.Session,
 	m *discordgo.MessageDeleteBulk,
 ) {
 	if m == nil || m.GuildID == "" || m.ChannelID == "" || len(m.Messages) == 0 {
 		return
 	}
+
+	// Resolve the author of the first message in the bulk. If it's the
+	// bot itself, skip — the bot's own purge triggered this bulk delete,
+	// and the executor already wrote a source='bot' audit row. Without
+	// this check, the bot's messages (info replies, etc.) would be
+	// recorded as a native purge with an unknown actor.
+	targetID := m.Messages[0]
+	authorID := e.resolveMessageAuthor(s, m.ChannelID, targetID)
+	if authorID == e.botUserID() {
+		return
+	}
+
 	bg, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -913,7 +946,6 @@ func (e *ExternalAudit) OnMessageDeleteBulkAudit(
 		"channel_id":    m.ChannelID,
 		"message_count": len(m.Messages),
 	}
-	targetID := m.Messages[0]
 
 	action := audit.ExternalAction{
 		ModAction: audit.ModAction{
@@ -935,6 +967,27 @@ func (e *ExternalAudit) OnMessageDeleteBulkAudit(
 			zap.Error(err),
 		)
 	}
+}
+
+// resolveMessageAuthor resolves the author ID for a message by checking
+// discordgo's state cache, then the MessageBuffer ring (which tracks
+// bot-sent messages that discordgo never adds to state). Returns "" if
+// the author cannot be determined.
+func (e *ExternalAudit) resolveMessageAuthor(
+	s *discordgo.Session,
+	channelID, msgID string,
+) string {
+	if s != nil {
+		if msg, err := s.State.Message(channelID, msgID); err == nil && msg != nil && msg.Author != nil {
+			return msg.Author.ID
+		}
+	}
+	if e.buffer != nil {
+		if id, _ := e.buffer.LookupAuthor(msgID); id != "" {
+			return id
+		}
+	}
+	return ""
 }
 
 func (e *ExternalAudit) OnGuildChannelCreate(_ *discordgo.Session, m *discordgo.ChannelCreate) {

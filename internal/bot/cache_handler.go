@@ -52,7 +52,7 @@ func (h *Handler) handleCacheCheck(
 		return true
 	}
 
-	resp, err := buildResponseFromCache(entry, m.Mentions)
+	resp, err := buildResponseFromCache(entry, m.Mentions, h.BotID())
 	if err != nil {
 		h.logger.Error("handler: building cached response", zap.Error(err))
 		return false
@@ -139,9 +139,16 @@ func (h *Handler) maybeWriteCache(
 		zap.String("intent", resp.Intent),
 	)
 }
+
+// buildResponseFromCache reconstructs an LLMResponse from a cache entry,
+// deriving targets from the current message's mentions. The bot's own ID
+// is filtered out: when a user writes "@Fine purge 3" the bot mention is
+// an invocation prefix, not a target. Without this filter the cached
+// purge intent would filter for the bot's own messages.
 func buildResponseFromCache(
 	entry *cache.CacheEntry,
 	mentions []*discordgo.User,
+	botID string,
 ) (*llm.LLMResponse, error) {
 	var params llm.Parameters
 	if entry.Parameters != "" {
@@ -152,6 +159,9 @@ func buildResponseFromCache(
 
 	targets := make([]llm.Target, 0, len(mentions))
 	for _, u := range mentions {
+		if u.ID == botID {
+			continue
+		}
 		targets = append(targets, llm.Target{
 			ID:   u.ID,
 			Type: "user",

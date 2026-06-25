@@ -87,6 +87,27 @@ func (b *MessageBuffer) ScanRecent(channelID string) []bufferedMessage {
 	return out
 }
 
+// LookupAuthor returns the author ID and is-bot flag for a message ID by
+// scanning the per-channel ring buffers. Returns ("", false) if the message
+// is not in the buffer. Used as a fallback when discordgo's state cache
+// doesn't have the message (e.g. bot-sent messages that were never added
+// to state by ChannelMessageSendComplex).
+func (b *MessageBuffer) LookupAuthor(msgID string) (authorID string, isBot bool) {
+	if msgID == "" {
+		return "", false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, slice := range b.perChan {
+		for _, entry := range slice {
+			if entry.MessageID == msgID {
+				return entry.AuthorID, entry.IsBot
+			}
+		}
+	}
+	return "", false
+}
+
 func (b *MessageBuffer) ScanForAction(
 	channelID, targetID string,
 	intentKeywords []string,
