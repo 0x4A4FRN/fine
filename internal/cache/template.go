@@ -11,7 +11,7 @@ var userMentionRe = regexp.MustCompile(`<@!?\d+>`)
 
 var roleMentionRe = regexp.MustCompile(`<@&\d+>`)
 
-func BuildTemplate(content string, userIDs []string, roleIDs []string) string {
+func BuildTemplate(content string, userIDs []string) string {
 	result := content
 
 	for _, id := range userIDs {
@@ -20,13 +20,7 @@ func BuildTemplate(content string, userIDs []string, roleIDs []string) string {
 	}
 
 	result = userMentionRe.ReplaceAllString(result, "<USER>")
-
-	for _, id := range roleIDs {
-		result = strings.ReplaceAll(result, "<@&"+id+">", "<ROLE>")
-	}
-
 	result = roleMentionRe.ReplaceAllString(result, "<ROLE>")
-
 	result = snowflakeRe.ReplaceAllString(result, "<USER>")
 
 	return strings.ToLower(strings.TrimSpace(result))

@@ -184,40 +184,25 @@ func (e *PurgeExecutor) Execute(ctx context.Context, action Action) error {
 }
 
 func (e *PurgeExecutor) deleteConfirmationFlowMessages(action Action) {
-
-	if action.SourceMsgID != "" {
-		if err := e.discord.DeleteMessage(action.ChannelID, action.SourceMsgID); err != nil {
-			e.logger.Warn("executor: purge: deleting source invoke failed",
-				zap.String("message_id", action.SourceMsgID),
-				zap.Error(err),
-			)
-		} else {
-			e.logger.Debug("executor: purge: source invoke deleted",
-				zap.String("message_id", action.SourceMsgID),
-			)
+	for _, m := range []struct {
+		label string
+		id    string
+	}{
+		{"source invoke", action.SourceMsgID},
+		{"bot confirmation", action.BotMessageID},
+		{"user reply", action.UserReplyMessageID},
+	} {
+		if m.id == "" {
+			continue
 		}
-	}
-	if action.BotMessageID != "" {
-		if err := e.discord.DeleteMessage(action.ChannelID, action.BotMessageID); err != nil {
-			e.logger.Warn("executor: purge: deleting bot confirmation failed",
-				zap.String("message_id", action.BotMessageID),
+		if err := e.discord.DeleteMessage(action.ChannelID, m.id); err != nil {
+			e.logger.Warn("executor: purge: deleting "+m.label+" failed",
+				zap.String("message_id", m.id),
 				zap.Error(err),
 			)
 		} else {
-			e.logger.Debug("executor: purge: bot confirmation deleted",
-				zap.String("message_id", action.BotMessageID),
-			)
-		}
-	}
-	if action.UserReplyMessageID != "" {
-		if err := e.discord.DeleteMessage(action.ChannelID, action.UserReplyMessageID); err != nil {
-			e.logger.Warn("executor: purge: deleting user reply failed",
-				zap.String("message_id", action.UserReplyMessageID),
-				zap.Error(err),
-			)
-		} else {
-			e.logger.Debug("executor: purge: user reply deleted",
-				zap.String("message_id", action.UserReplyMessageID),
+			e.logger.Debug("executor: purge: "+m.label+" deleted",
+				zap.String("message_id", m.id),
 			)
 		}
 	}
@@ -292,9 +277,8 @@ func (e *PurgeExecutor) purgeMessages(
 	maxCount int,
 	userFilter *string,
 ) (int, int, error) {
-	e.logger.Info("executor: purge: purgeMessages starting",
+	e.logger.Info("executor: purge: starting",
 		zap.String("channel_id", channelID),
-		zap.String("source_message_id", sourceMsgID),
 		zap.Int("max_count", maxCount),
 		zap.Bool("user_filter_active", userFilter != nil),
 	)
@@ -317,9 +301,6 @@ func (e *PurgeExecutor) purgeMessages(
 			return totalDeleted, totalSkipped, err
 		}
 		if len(msgs) == 0 {
-			e.logger.Info("executor: purge: batch exhausted; no more messages",
-				zap.Int("batch", batchNum),
-			)
 			break
 		}
 
@@ -344,7 +325,7 @@ func (e *PurgeExecutor) purgeMessages(
 
 		totalSkipped += batchSkipped
 
-		e.logger.Info("executor: purge: batch evaluated",
+		e.logger.Debug("executor: purge: batch evaluated",
 			zap.Int("batch", batchNum),
 			zap.Int("messages_fetched", len(msgs)),
 			zap.Int("ids_to_bulk_delete", len(ids)),
@@ -361,23 +342,15 @@ func (e *PurgeExecutor) purgeMessages(
 				return totalDeleted, totalSkipped, err
 			}
 			totalDeleted += len(ids)
-			e.logger.Info("executor: purge: bulk delete ok from discord",
-				zap.Int("batch", batchNum),
-				zap.Int("requested_count", len(ids)),
-				zap.Int("running_total_deleted", totalDeleted),
-			)
 		}
 
 		if len(msgs) < purgeBatchSize {
-			e.logger.Info("executor: purge: short batch, no further pagination needed",
-				zap.Int("batch", batchNum),
-			)
 			break
 		}
 		beforeID = msgs[len(msgs)-1].ID
 	}
 
-	e.logger.Info("executor: purge: purgeMessages finished",
+	e.logger.Info("executor: purge: finished",
 		zap.Int("deleted", totalDeleted),
 		zap.Int("skipped_too_old", totalSkipped),
 		zap.Int("requested_max", maxCount),

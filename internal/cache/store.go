@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -56,15 +55,14 @@ func (s *Store) Get(
 }
 
 const upsertCacheSQL = `
-INSERT INTO intent_cache (guild_id, template, intent, confidence, parameters, action_type, hits, last_hit_at)
-VALUES ($1, $2, $3, $4, $5, $6, 0, NOW())
+INSERT INTO intent_cache (guild_id, template, intent, confidence, parameters, action_type, last_hit_at)
+VALUES ($1, $2, $3, $4, $5, $6, NOW())
 ON CONFLICT (guild_id, template)
 DO UPDATE SET
     intent = EXCLUDED.intent,
     confidence = EXCLUDED.confidence,
     parameters = EXCLUDED.parameters,
     action_type = EXCLUDED.action_type,
-    hits = intent_cache.hits + 1,
     last_hit_at = NOW()`
 
 func (s *Store) Set(
@@ -85,15 +83,4 @@ func (s *Store) Set(
 		return fmt.Errorf("cache: upserting entry: %w", err)
 	}
 	return nil
-}
-
-func SerializeParameters(params any) (string, error) {
-	if params == nil {
-		return "", nil
-	}
-	b, err := json.Marshal(params)
-	if err != nil {
-		return "", fmt.Errorf("cache: serializing parameters: %w", err)
-	}
-	return string(b), nil
 }

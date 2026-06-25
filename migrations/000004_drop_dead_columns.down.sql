@@ -1,0 +1,2 @@
+ALTER TABLE intent_cache ADD COLUMN hits INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE message_snapshots ADD COLUMN embeds JSON;

@@ -46,10 +46,6 @@ type PreChecker interface {
 	PreCheck(ctx context.Context, action Action) string
 }
 
-func PermissionAdministrator(_ string, guildPerms int64) bool {
-	return guildPerms&discordgo.PermissionAdministrator != 0
-}
-
 func gate(
 	api MemberAPI,
 	r replies.Renderer,

@@ -133,3 +133,17 @@ func splitDot(name string) (category, key string, ok bool) {
 	}
 	return name[:idx], name[idx+1:], true
 }
+
+type NopRenderer struct{}
+
+var _ Renderer = NopRenderer{}
+
+func (NopRenderer) Get(category, key string, _ any) string {
+	return fmt.Sprintf("[replies:%s.%s]", category, key)
+}
+
+func (NopRenderer) Render(templateName string, _ any) (string, error) {
+	return "", fmt.Errorf("replies: template %q not configured (NopRenderer)", templateName)
+}
+
+func (NopRenderer) Has(_, _ string) bool { return false }

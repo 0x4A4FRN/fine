@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
@@ -121,8 +120,7 @@ func (h *Handler) HandleMessageDeleteBulk(_ *discordgo.Session, m *discordgo.Mes
 }
 
 func (h *Handler) downloadAndUpload(url, s3Key, contentType string) error {
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(url)
+	resp, err := h.httpClient.Get(url)
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
@@ -146,24 +144,29 @@ func (h *Handler) downloadAndUpload(url, s3Key, contentType string) error {
 }
 
 func parseSnipeCustomID(customID string) (prefix, botMsgID string, ok bool) {
-	parts := strings.SplitN(customID, "_", 3)
-	if len(parts) != 3 || parts[0] != "snipe" {
+	head, rest, ok := strings.Cut(customID, "_")
+	if !ok || head != "snipe" {
 		return "", "", false
 	}
-	if parts[2] == "" {
+	mid, tail, ok := strings.Cut(rest, "_")
+	if !ok || tail == "" {
 		return "", "", false
 	}
-	return "snipe_" + parts[1], parts[2], true
+	return "snipe_" + mid, tail, true
 }
 
 func parseConfirmCustomID(customID string) (prefix string, windowID int64, ok bool) {
-	parts := strings.SplitN(customID, "_", 3)
-	if len(parts) != 3 || parts[0] != "confirm" {
+	head, rest, ok := strings.Cut(customID, "_")
+	if !ok || head != "confirm" {
 		return "", 0, false
 	}
-	id, err := strconv.ParseInt(parts[2], 10, 64)
+	mid, tail, ok := strings.Cut(rest, "_")
+	if !ok {
+		return "", 0, false
+	}
+	id, err := strconv.ParseInt(tail, 10, 64)
 	if err != nil {
 		return "", 0, false
 	}
-	return parts[0] + "_" + parts[1], id, true
+	return "confirm_" + mid, id, true
 }

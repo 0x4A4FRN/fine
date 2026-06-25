@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -149,9 +150,7 @@ func (s *Store) GetHistory(
 		return nil, fmt.Errorf("conversation: iterating history rows: %w", err)
 	}
 
-	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
-		messages[i], messages[j] = messages[j], messages[i]
-	}
+	slices.Reverse(messages)
 
 	if messages == nil {
 		messages = []Message{}

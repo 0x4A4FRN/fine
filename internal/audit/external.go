@@ -100,27 +100,27 @@ SET actor_id    = COALESCE(NULLIF($2, ''), actor_id),
     reason       = COALESCE(NULLIF($5, ''), reason)
 WHERE id = $1`
 
-func UpdateActor(
-	ctx context.Context,
-	db DB,
-	rowID int64,
-	actorID string,
-	actorIsBot bool,
-	actorName string,
-	reason string,
-) error {
-	if rowID == 0 {
+type ActorUpdate struct {
+	RowID      int64
+	ActorID    string
+	ActorIsBot bool
+	ActorName  string
+	Reason     string
+}
+
+func UpdateActor(ctx context.Context, db DB, upd ActorUpdate) error {
+	if upd.RowID == 0 {
 		return fmt.Errorf("audit: update actor: rowID must not be zero")
 	}
 
 	_, err := db.Exec(
 		ctx,
 		updateActorSQL,
-		rowID,
-		actorID,
-		actorIsBot,
-		actorName,
-		reason,
+		upd.RowID,
+		upd.ActorID,
+		upd.ActorIsBot,
+		upd.ActorName,
+		upd.Reason,
 	)
 	if err != nil {
 		return fmt.Errorf("audit: update actor: %w", err)

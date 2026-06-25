@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
 	"github.com/0x4A4FRN/fine/internal/audit"
 	"github.com/0x4A4FRN/fine/internal/bot"
@@ -54,15 +54,14 @@ func (d *discordAdapter) BotUserID() string {
 }
 
 func main() {
-
-	bootstrapLogger, _ := logging.NewDevelopment(zapcore.InfoLevel)
-	defer func() {
-		_ = bootstrapLogger.Sync()
-	}()
+	fatal := func(msg string, err error) {
+		fmt.Fprintf(os.Stderr, "fine: %s: %v\n", msg, err)
+		os.Exit(1)
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
-		bootstrapLogger.Fatal("config load failed", zap.Error(err))
+		fatal("config load failed", err)
 	}
 
 	lvl, _ := logging.ParseLevel(cfg.LogLevel)
@@ -74,11 +73,7 @@ func main() {
 
 	logger, err := logging.NewDevelopmentWithLogDir(lvl, cfg.LogDir, logBroadcaster)
 	if err != nil {
-		bootstrapLogger.Fatal("logger build failed",
-			zap.String("log_level", cfg.LogLevel),
-			zap.String("log_dir", cfg.LogDir),
-			zap.Error(err),
-		)
+		fatal("logger build failed", err)
 	}
 	defer func() {
 		_ = logger.Sync()
@@ -249,9 +244,6 @@ func main() {
 	session.AddHandler(handler.HandleInteractionCreate)
 	session.AddHandler(handler.OnGuildMemberUpdate)
 
-	// External-audit listeners — gate events from non-Fine sources
-	// (native Discord UI, other moderation bots) into the same mod_actions
-	// table Fine's executors write to. See internal/bot/external_audit.go.
 	messageBuffer := bot.NewMessageBuffer(15)
 	externalAudit := bot.NewExternalAudit(
 		pool,
@@ -310,6 +302,10 @@ func main() {
 	router.Stop()
 }
 
+const retentionSweepConversationMessagesSQL = `DELETE FROM conversation_messages WHERE created_at < NOW() - $1 * INTERVAL '1 day'`
+const retentionSweepConversationsSQL = `DELETE FROM conversations WHERE last_active_at < NOW() - $1 * INTERVAL '1 day'`
+const retentionSweepModActionsSQL = `DELETE FROM mod_actions WHERE executed_at < NOW() - $1 * INTERVAL '1 day'`
+
 func retentionSweep(ctx context.Context, pool *db.Pool, snapshotStore *storage.Store, cfg *config.Config, logger *zap.Logger) {
 	sweeps := []struct {
 		label string
@@ -318,21 +314,21 @@ func retentionSweep(ctx context.Context, pool *db.Pool, snapshotStore *storage.S
 		{
 			"conversation_messages",
 			func() error {
-				_, err := pool.Exec(ctx, "DELETE FROM conversation_messages WHERE created_at < NOW() - $1 * INTERVAL '1 day'", cfg.ConversationRetentionDays)
+				_, err := pool.Exec(ctx, retentionSweepConversationMessagesSQL, cfg.ConversationRetentionDays)
 				return err
 			},
 		},
 		{
 			"conversations",
 			func() error {
-				_, err := pool.Exec(ctx, "DELETE FROM conversations WHERE last_active_at < NOW() - $1 * INTERVAL '1 day'", cfg.ConversationRetentionDays)
+				_, err := pool.Exec(ctx, retentionSweepConversationsSQL, cfg.ConversationRetentionDays)
 				return err
 			},
 		},
 		{
 			"mod_actions",
 			func() error {
-				_, err := pool.Exec(ctx, "DELETE FROM mod_actions WHERE executed_at < NOW() - $1 * INTERVAL '1 day'", cfg.AuditRetentionDays)
+				_, err := pool.Exec(ctx, retentionSweepModActionsSQL, cfg.AuditRetentionDays)
 				return err
 			},
 		},

@@ -101,7 +101,7 @@ func (b *MessageBuffer) ScanForAction(
 	defer b.mu.Unlock()
 
 	if channelID == "" {
-		return b.scanAcrossChannelsLocked("human", "", targetID, intentKeywords, window, now)
+		return b.scanAcrossChannelsForHuman(targetID, intentKeywords, window, now)
 	}
 	for i := len(b.perChan[channelID]) - 1; i >= 0; i-- {
 		entry := b.perChan[channelID][i]
@@ -136,7 +136,7 @@ func (b *MessageBuffer) ScanForBotResponse(
 	defer b.mu.Unlock()
 
 	if channelID == "" {
-		return b.scanAcrossChannelsLocked("bot", botAuthorID, "", nil, window, now)
+		return b.scanAcrossChannelsForBot(botAuthorID, window, now)
 	}
 	for i := len(b.perChan[channelID]) - 1; i >= 0; i-- {
 		entry := b.perChan[channelID][i]
@@ -152,8 +152,8 @@ func (b *MessageBuffer) ScanForBotResponse(
 	return nil
 }
 
-func (b *MessageBuffer) scanAcrossChannelsLocked(
-	mode, authorID, targetID string,
+func (b *MessageBuffer) scanAcrossChannelsForHuman(
+	targetID string,
 	intentKeywords []string,
 	window time.Duration,
 	now time.Time,
@@ -165,32 +165,43 @@ func (b *MessageBuffer) scanAcrossChannelsLocked(
 			if now.Sub(entry.Timestamp) > window {
 				break
 			}
-			switch mode {
-			case "bot":
-				if !entry.IsBot || entry.AuthorID != authorID {
-					continue
-				}
-				out := entry
-				best = &out
-				return best
-			case "human":
-				if entry.IsBot {
-					continue
-				}
-				if targetID != "" && !mentionsTarget(entry.Content, targetID) {
-					continue
-				}
-				if !containsAny(entry.Content, intentKeywords) {
-					continue
-				}
-				if best == nil || entry.Timestamp.After(best.Timestamp) {
-					cp := entry
-					best = &cp
-				}
+			if entry.IsBot {
+				continue
+			}
+			if targetID != "" && !mentionsTarget(entry.Content, targetID) {
+				continue
+			}
+			if !containsAny(entry.Content, intentKeywords) {
+				continue
+			}
+			if best == nil || entry.Timestamp.After(best.Timestamp) {
+				cp := entry
+				best = &cp
 			}
 		}
 	}
 	return best
+}
+
+func (b *MessageBuffer) scanAcrossChannelsForBot(
+	botAuthorID string,
+	window time.Duration,
+	now time.Time,
+) *bufferedMessage {
+	for _, slice := range b.perChan {
+		for i := len(slice) - 1; i >= 0; i-- {
+			entry := slice[i]
+			if now.Sub(entry.Timestamp) > window {
+				break
+			}
+			if !entry.IsBot || entry.AuthorID != botAuthorID {
+				continue
+			}
+			out := entry
+			return &out
+		}
+	}
+	return nil
 }
 
 func mentionsTarget(content, targetID string) bool {

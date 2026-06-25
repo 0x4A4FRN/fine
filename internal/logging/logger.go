@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -48,10 +47,14 @@ func NewDevelopmentWithLogDir(level zapcore.Level, dir string, broadcaster *LogB
 			return nil, fmt.Errorf("logging: creating log dir %q: %w", dir, err)
 		}
 		logPath := filepath.Join(dir, "fine.log")
+		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			return nil, fmt.Errorf("logging: opening log file %q: %w", logPath, err)
+		}
 		fileEncoder := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
 		cores = append(cores, zapcore.NewCore(
 			fileEncoder,
-			zapcore.AddSync(&syncFileWriter{path: logPath}),
+			zapcore.Lock(f),
 			level,
 		))
 	}
@@ -69,32 +72,4 @@ func NewDevelopmentWithLogDir(level zapcore.Level, dir string, broadcaster *LogB
 	}
 
 	return zap.New(zapcore.NewTee(cores...)), nil
-}
-
-type syncFileWriter struct {
-	mu   sync.Mutex
-	path string
-	f    *os.File
-}
-
-func (w *syncFileWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.f == nil {
-		f, err := os.OpenFile(w.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-		if err != nil {
-			return 0, err
-		}
-		w.f = f
-	}
-	return w.f.Write(p)
-}
-
-func (w *syncFileWriter) Sync() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.f == nil {
-		return nil
-	}
-	return w.f.Sync()
 }

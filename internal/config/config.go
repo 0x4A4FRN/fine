@@ -1,6 +1,7 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"strconv"
@@ -96,50 +97,36 @@ func Load() (*Config, error) {
 }
 
 func envOr(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
+	return cmp.Or(os.Getenv(key), def)
 }
 
-func envIntOr(key string, def int) int {
+func parseEnvNumber[T any](key string, def T, parse func(string) (T, error)) T {
 	v := os.Getenv(key)
 	if v == "" {
 		return def
 	}
-	n, err := strconv.Atoi(v)
+	n, err := parse(v)
 	if err != nil {
 		return def
 	}
 	return n
 }
 
+func envIntOr(key string, def int) int {
+	return parseEnvNumber(key, def, strconv.Atoi)
+}
+
 func envFloatOr(key string, def float64) float64 {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	f, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		return def
-	}
-	return f
+	return parseEnvNumber(key, def, func(s string) (float64, error) {
+		return strconv.ParseFloat(s, 64)
+	})
 }
 
 func parseAPIKeys(raw string) []string {
 	if raw == "" {
 		return nil
 	}
-	parts := strings.Split(raw, ",")
-	keys := make([]string, 0, len(parts))
-	for _, p := range parts {
-		k := strings.TrimSpace(p)
-		if k != "" {
-			keys = append(keys, k)
-		}
-	}
-	if len(keys) == 0 {
-		return nil
-	}
-	return keys
+	return strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t' || r == '\n'
+	})
 }

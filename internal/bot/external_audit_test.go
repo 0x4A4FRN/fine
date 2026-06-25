@@ -2,7 +2,6 @@ package bot
 
 import (
 	"testing"
-	"time"
 )
 
 func TestSnowflakeTime(t *testing.T) {
@@ -123,23 +122,4 @@ func TestParseActorFromReason(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestAbsDuration(t *testing.T) {
-	if absDuration(-5*time.Second) != 5*time.Second {
-		t.Errorf("negative input not handled")
-	}
-	if absDuration(3*time.Second) != 3*time.Second {
-		t.Errorf("positive input changed")
-	}
-	if absDuration(0) != 0 {
-		t.Errorf("zero changed")
-	}
-}
-
-func absTime(d time.Duration) time.Duration {
-	if d < 0 {
-		return -d
-	}
-	return d
 }

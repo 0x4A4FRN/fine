@@ -40,23 +40,33 @@ func MatchConfirmation(text string) (action string, matched bool) {
 	return "", false
 }
 
-var destructiveIntents = map[string]bool{
-	"ban":            true,
-	"unban":          true,
-	"kick":           true,
-	"timeout":        true,
-	"untimeout":      true,
-	"mute":           true,
-	"unmute":         true,
-	"deafen":         true,
-	"undeafen":       true,
-	"add_role":       true,
-	"remove_role":    true,
-	"purge_messages": true,
+type moderationIntentMeta struct {
+	Destructive       bool
+	NeedsMessageFixup bool
+}
+
+var moderationIntents = map[string]moderationIntentMeta{
+	"ban":            {Destructive: true},
+	"unban":          {Destructive: true},
+	"kick":           {Destructive: true},
+	"timeout":        {Destructive: true},
+	"untimeout":      {Destructive: true},
+	"mute":           {Destructive: true},
+	"unmute":         {Destructive: true},
+	"deafen":         {Destructive: true},
+	"undeafen":       {Destructive: true},
+	"add_role":       {Destructive: true},
+	"remove_role":    {Destructive: true},
+	"purge_messages": {Destructive: true},
+	"pin_message":    {NeedsMessageFixup: true},
+	"unpin_message":  {NeedsMessageFixup: true},
+	"delete_message": {NeedsMessageFixup: true},
+	"set_nickname":   {},
+	"reset_nickname": {},
 }
 
 func IsDestructive(intent string) bool {
-	return destructiveIntents[intent]
+	return moderationIntents[intent].Destructive
 }
 
 type SuggestionWindow struct {

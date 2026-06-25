@@ -47,17 +47,24 @@ func (h *Handler) handleAuditLookup(
 
 	var data audit.TemplateData
 	if result != nil {
-		data = audit.BuildTemplateData(result)
+		data = audit.BuildTemplateData(result, h.replies)
 	}
 
-	replyText := "I don't have a record of that."
-	if h.replies != nil {
-		rendered, err := h.replies.Render(templateName, data)
-		if err != nil {
-			h.logger.Error("handler: rendering audit reply", zap.Error(err))
-		} else {
-			replyText = rendered
+	replyText, err := h.replies.Render(templateName, data)
+	if err != nil {
+		h.logger.Error("handler: rendering audit reply",
+			zap.String("template", templateName),
+			zap.Error(err),
+		)
+		fallback, ferr := h.replies.Render("audit.no_record", data)
+		if ferr != nil {
+			h.logger.Error("handler: rendering audit fallback",
+				zap.String("fallback_template", "audit.no_record"),
+				zap.Error(ferr),
+			)
+			fallback = "I don't have a record of that."
 		}
+		replyText = fallback
 	}
 
 	h.logger.Info("handler: sending audit reply",

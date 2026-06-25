@@ -10,13 +10,26 @@ type LogBroadcaster struct {
 	mu          sync.Mutex
 	subscribers map[chan []byte]struct{}
 	history     [][]byte
+	head        int
+	count       int
 }
 
 func NewLogBroadcaster() *LogBroadcaster {
 	return &LogBroadcaster{
 		subscribers: make(map[chan []byte]struct{}),
-		history:     make([][]byte, 0, historySize),
+		history:     make([][]byte, historySize),
 	}
+}
+
+func (b *LogBroadcaster) oldestToNewest() [][]byte {
+	if b.count == 0 {
+		return nil
+	}
+	out := make([][]byte, b.count)
+	for i := 0; i < b.count; i++ {
+		out[i] = b.history[(b.head+i)%historySize]
+	}
+	return out
 }
 
 func (b *LogBroadcaster) Subscribe(maxLines int) <-chan []byte {
@@ -24,9 +37,8 @@ func (b *LogBroadcaster) Subscribe(maxLines int) <-chan []byte {
 
 	b.mu.Lock()
 	if maxLines != 0 {
-		hist := b.history
+		hist := b.oldestToNewest()
 		if maxLines > 0 && len(hist) > maxLines {
-
 			hist = hist[len(hist)-maxLines:]
 		}
 		for _, line := range hist {
@@ -52,24 +64,23 @@ func (b *LogBroadcaster) Unsubscribe(ch <-chan []byte) {
 }
 
 func (b *LogBroadcaster) Write(p []byte) (int, error) {
-
 	line := make([]byte, len(p))
 	copy(line, p)
 
 	b.mu.Lock()
 
-	if len(b.history) < historySize {
-		b.history = append(b.history, line)
+	if b.count < historySize {
+		b.history[b.count] = line
+		b.count++
 	} else {
-
-		b.history = append(b.history[1:], line)
+		b.history[b.head] = line
+		b.head = (b.head + 1) % historySize
 	}
 
 	for ch := range b.subscribers {
 		select {
 		case ch <- line:
 		default:
-
 		}
 	}
 	b.mu.Unlock()

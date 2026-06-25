@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	"github.com/0x4A4FRN/fine/internal/cache"
 	"github.com/0x4A4FRN/fine/internal/llm"
 	"github.com/0x4A4FRN/fine/internal/safety"
@@ -16,8 +17,8 @@ func (h *Handler) handleCacheCheck(
 	m *discordgo.MessageCreate,
 	cleaned string,
 ) bool {
-	userIDs, roleIDs := extractMentionIDs(m.Mentions)
-	template := cache.BuildTemplate(cleaned, userIDs, roleIDs)
+	userIDs := extractMentionIDs(m.Mentions)
+	template := cache.BuildTemplate(cleaned, userIDs)
 
 	entry, err := h.cacheStore.Get(ctx, m.GuildID, template)
 	if err != nil {
@@ -114,14 +115,15 @@ func (h *Handler) maybeWriteCache(
 		return
 	}
 
-	userIDs, roleIDs := extractMentionIDsFromResponse(resp)
-	template := cache.BuildTemplate(cleaned, userIDs, roleIDs)
+	userIDs, _ := extractMentionIDsFromResponse(resp)
+	template := cache.BuildTemplate(cleaned, userIDs)
 
-	paramsJSON, err := cache.SerializeParameters(resp.Parameters)
+	b, err := json.Marshal(resp.Parameters)
 	if err != nil {
 		h.logger.Error("handler: serializing parameters for cache", zap.Error(err))
 		return
 	}
+	paramsJSON := string(b)
 
 	entry := cache.CacheEntry{
 		Intent:     resp.Intent,
@@ -164,15 +166,13 @@ func buildResponseFromCache(
 		Parameters:   params,
 	}, nil
 }
-func extractMentionIDs(
-	mentions []*discordgo.User,
-) (userIDs []string, roleIDs []string) {
-	userIDs = make([]string, 0, len(mentions))
+
+func extractMentionIDs(mentions []*discordgo.User) []string {
+	userIDs := make([]string, 0, len(mentions))
 	for _, u := range mentions {
 		userIDs = append(userIDs, u.ID)
 	}
-	roleIDs = []string{}
-	return userIDs, roleIDs
+	return userIDs
 }
 func extractMentionIDsFromResponse(resp *llm.LLMResponse) (userIDs []string, roleIDs []string) {
 	userIDs = []string{}

@@ -3,7 +3,6 @@ package llm
 import (
 	"bytes"
 	"encoding/json"
-	"regexp"
 	"strings"
 )
 
@@ -131,14 +130,40 @@ func defaultTargetTypeForIntent(intent string) string {
 	return "user"
 }
 
-var discordMentionRe = regexp.MustCompile(`^<([@#][!&]?)(\d{17,20})>$`)
-
 func parseDiscordMention(s string) (ty, id string, ok bool) {
-	match := discordMentionRe.FindStringSubmatch(s)
-	if match == nil {
+	if len(s) < 5 || s[0] != '<' || s[len(s)-1] != '>' {
 		return "", "", false
 	}
-	switch match[1] {
+	inner := s[1 : len(s)-1]
+	if len(inner) < 18 {
+		return "", "", false
+	}
+	var prefix, rest string
+	switch inner[0] {
+	case '@':
+		if len(inner) > 1 && (inner[1] == '!' || inner[1] == '&') {
+			prefix, rest = inner[:2], inner[2:]
+		} else {
+			prefix, rest = inner[:1], inner[1:]
+		}
+	case '#':
+		if len(inner) > 1 && inner[1] == '!' {
+			prefix, rest = inner[:2], inner[2:]
+		} else {
+			prefix, rest = inner[:1], inner[1:]
+		}
+	default:
+		return "", "", false
+	}
+	if len(rest) < 17 || len(rest) > 20 {
+		return "", "", false
+	}
+	for _, b := range []byte(rest) {
+		if b < '0' || b > '9' {
+			return "", "", false
+		}
+	}
+	switch prefix {
 	case "@", "@!":
 		ty = "user"
 	case "@&":
@@ -148,7 +173,7 @@ func parseDiscordMention(s string) (ty, id string, ok bool) {
 	default:
 		return "", "", false
 	}
-	return ty, match[2], true
+	return ty, rest, true
 }
 
 type Target struct {

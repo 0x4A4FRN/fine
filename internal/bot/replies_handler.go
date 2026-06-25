@@ -7,45 +7,7 @@ import (
 	"github.com/0x4A4FRN/fine/internal/llm"
 )
 
-func defaultSuccessText(intent string) string {
-	switch intent {
-	case "pin_message":
-		return "Pinned."
-	case "unpin_message":
-		return "Unpinned."
-	case "delete_message":
-		return "Message deleted."
-	case "ban":
-		return "Banned."
-	case "unban":
-		return "Unbanned."
-	case "kick":
-		return "Kicked."
-	case "mute":
-		return "Muted."
-	case "unmute":
-		return "Unmuted."
-	case "deafen":
-		return "Deafened."
-	case "undeafen":
-		return "Undeafened."
-	case "timeout":
-		return "Timed out."
-	case "untimeout":
-		return "Timeout removed."
-	case "set_nickname":
-		return "Nickname updated."
-	case "reset_nickname":
-		return "Nickname reset."
-	case "add_role":
-		return "Role added."
-	case "remove_role":
-		return "Role removed."
-	case "purge_messages":
-		return "Purged."
-	}
-	return "Done."
-}
+const verboseDebugPrefix = "Debug: "
 
 var successReplyKey = map[string]struct {
 	category string
@@ -74,17 +36,13 @@ func (h *Handler) renderDefaultSuccess(
 	intent string,
 	resp *llm.LLMResponse,
 ) string {
-	if h.replies == nil {
-		return defaultSuccessText(intent)
-	}
-	loc, ok := successReplyKey[intent]
-	if !ok {
-
-		return defaultSuccessText(intent)
-	}
 	vars := successVars(intent, resp)
-	return h.replies.Get(loc.category, loc.key, vars)
+	if loc, ok := successReplyKey[intent]; ok {
+		return h.replies.Get(loc.category, loc.key, vars)
+	}
+	return h.replies.Get("handler", "done", nil)
 }
+
 func successVars(intent string, resp *llm.LLMResponse) map[string]string {
 	vars := map[string]string{}
 	if resp == nil {
@@ -108,26 +66,22 @@ func successVars(intent string, resp *llm.LLMResponse) map[string]string {
 	return vars
 }
 
-const fallbackFailureText = "I couldn't complete that."
-const verboseDebugPrefix = "Debug: "
-
 func (h *Handler) failReplyText(
 	intent string, resp *llm.LLMResponse, err error, verbose bool,
 ) string {
-	if h.replies == nil || !h.replies.Has(intent, "failed") {
-		text := fallbackFailureText
-		if verbose {
-			text += "\n" + verboseDebugPrefix + err.Error()
-		}
-		return text
-	}
 	vars := successVars(intent, resp)
-	text := h.replies.Get(intent, "failed", vars)
+	var text string
+	if h.replies.Has(intent, "failed") {
+		text = h.replies.Get(intent, "failed", vars)
+	} else {
+		text = h.replies.Get("handler", "failed_fallback", nil)
+	}
 	if verbose {
 		text += "\n" + verboseDebugPrefix + err.Error()
 	}
 	return text
 }
+
 func firstTargetByType(targets []llm.Target, ty string) string {
 	for _, t := range targets {
 		if t.Type == ty {
@@ -136,21 +90,15 @@ func firstTargetByType(targets []llm.Target, ty string) string {
 	}
 	return ""
 }
+
 func (h *Handler) cloudyReplyText() string {
-	if h.replies == nil {
-		return "I had a hiccup processing that. Try again in a moment."
-	}
 	return h.replies.Get("handler", "cloudy", nil)
 }
+
 func (h *Handler) negationReplyText() string {
-	if h.replies == nil {
-		return "I think you said you don't want me to do this, so I won't."
-	}
 	return h.replies.Get("audit", "negation_override", nil)
 }
+
 func (h *Handler) cancelReplyText() string {
-	if h.replies == nil {
-		return "Cancelled."
-	}
 	return h.replies.Get("audit", "cancelled", nil)
 }

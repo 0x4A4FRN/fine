@@ -24,21 +24,22 @@ var utilityIntents = map[string]bool{
 
 var snipeCountRe = regexp.MustCompile(`(?i)^snipe\s+(\d+)$`)
 
+var bareUtilityAliases = map[string]string{
+	"ping":        "ping",
+	"help":        "help",
+	"info":        "info",
+	"information": "info",
+	"status":      "status",
+	"health":      "status",
+	"stats":       "status",
+	"snipe":       "snipe",
+}
+
 func matchBareUtilityCommand(cleaned string) string {
 	s := strings.ToLower(strings.TrimSpace(cleaned))
-	switch s {
-	case "ping":
-		return "ping"
-	case "help":
-		return "help"
-	case "info", "information":
-		return "info"
-	case "status", "health", "stats":
-		return "status"
-	case "snipe":
-		return "snipe"
+	if intent, ok := bareUtilityAliases[s]; ok {
+		return intent
 	}
-
 	if snipeCountRe.MatchString(s) {
 		return "snipe"
 	}
@@ -60,15 +61,8 @@ func parseSnipeCount(cleaned string) int {
 	return n
 }
 func isModerationTierIntent(intent string) bool {
-	if destructiveIntents[intent] {
-		return true
-	}
-	switch intent {
-	case "pin_message", "unpin_message", "delete_message",
-		"set_nickname", "reset_nickname":
-		return true
-	}
-	return false
+	_, ok := moderationIntents[intent]
+	return ok
 }
 func applyModerationOverride(resp *llm.LLMResponse) bool {
 	if resp == nil {
@@ -81,11 +75,7 @@ func applyModerationOverride(resp *llm.LLMResponse) bool {
 	return false
 }
 func needsMessageReplyFixup(intent string) bool {
-	switch intent {
-	case "pin_message", "unpin_message", "delete_message":
-		return true
-	}
-	return false
+	return moderationIntents[intent].NeedsMessageFixup
 }
 
 var implicitDeleteTriggers = []string{

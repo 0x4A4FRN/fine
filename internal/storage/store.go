@@ -48,8 +48,8 @@ func NewStore(db DB) *Store {
 
 const insertSnapshotSQL = `
 INSERT INTO message_snapshots
-    (guild_id, channel_id, message_id, author_id, author_name, author_bot, content, attachments, embeds, message_ts)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    (guild_id, channel_id, message_id, author_id, author_name, author_bot, content, attachments, message_ts)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT DO NOTHING`
 
 func (s *Store) InsertSnapshot(ctx context.Context, snap Snapshot) error {
@@ -73,7 +73,6 @@ func (s *Store) InsertSnapshot(ctx context.Context, snap Snapshot) error {
 		snap.AuthorBot,
 		snap.Content,
 		attachJSON,
-		nil,
 		snap.MessageTS,
 	)
 	if err != nil {

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/0x4A4FRN/fine/internal/replies"
 )
 
 type LookupResult struct {
@@ -27,8 +29,7 @@ type LookupResult struct {
 type ActorState int
 
 const (
-	ActorStateKnownMention ActorState = iota
-	ActorStateExternalBotMention
+	ActorStateExternalBotMention ActorState = iota
 	ActorStateExternalNamed
 	ActorStateExternalUnknownBot
 	ActorStateBotMention
@@ -41,7 +42,7 @@ func (r *LookupResult) Classify() ActorState {
 	switch r.Source {
 	case SourceExternal:
 		switch {
-		case r.ActorIsBot == false && r.ActorID != "" && r.ActorID != "unknown":
+		case !r.ActorIsBot && r.ActorID != "" && r.ActorID != "unknown":
 			return ActorStateExternalBotMention
 		case r.ActorName != "":
 			return ActorStateExternalNamed
@@ -61,107 +62,53 @@ func (r *LookupResult) Classify() ActorState {
 	}
 }
 
-func (r *LookupResult) ActorLabel() string {
-	if r == nil {
-		return "an unknown moderator"
-	}
-	state := r.Classify()
-	switch state {
-	case ActorStateKnownMention, ActorStateBotMention, ActorStateExternalBotMention:
-		if r.ActorID != "" && r.ActorID != "unknown" {
-			return "<@" + r.ActorID + ">"
-		}
-		if r.ActorName != "" {
-			return "a user named " + r.ActorName
-		}
-		return "an unknown moderator"
-	case ActorStateExternalNamed:
-		if r.ActorName != "" {
-			return "a user named " + r.ActorName
-		}
-		return "an unknown moderator"
-	case ActorStateExternalUnknownBot:
-		if r.ActorIsBot && r.ActorID != "" && r.ActorID != "unknown" {
-			return "a bot (<@" + r.ActorID + ">)"
-		}
-		return "an automated bot"
-	default:
-		return "an unknown moderator"
-	}
-}
-
 type AuditQuery struct {
 	Action   *string
 	TargetID *string
 	Info     string
 }
 
-var intentPastTense = map[string]string{
-	"ban":              "banned",
-	"unban":            "unbanned",
-	"kick":             "kicked",
-	"timeout":          "timed out",
-	"untimeout":        "untimed out",
-	"mute":             "muted",
-	"unmute":           "unmuted",
-	"deafen":           "deafened",
-	"undeafen":         "undeafened",
-	"set_nickname":     "renamed",
-	"reset_nickname":   "reset",
-	"add_role":         "given a role",
-	"remove_role":      "had a role removed",
-	"pin_message":      "pinned a message",
-	"unpin_message":    "unpinned a message",
-	"delete_message":   "had a message deleted",
-	"purge_messages":   "had messages purged",
-	"voice_disconnect": "disconnected from voice",
-	"channel_create":   "created",
-	"channel_update":   "updated",
-	"channel_delete":   "deleted",
-	"role_create":      "created",
-	"role_update":      "updated",
-	"role_delete":      "deleted",
-	"guild_update":     "changed",
-}
-
-var intentNoun = map[string]string{
-	"ban":              "ban",
-	"unban":            "unban",
-	"kick":             "kick",
-	"timeout":          "timeout",
-	"untimeout":        "untimeout",
-	"mute":             "mute",
-	"unmute":           "unmute",
-	"deafen":           "deafen",
-	"undeafen":         "undeafen",
-	"set_nickname":     "rename",
-	"reset_nickname":   "reset",
-	"add_role":         "role add",
-	"remove_role":      "role remove",
-	"pin_message":      "pin",
-	"unpin_message":    "unpin",
-	"delete_message":   "deletion",
-	"purge_messages":   "purge",
-	"voice_disconnect": "voice disconnect",
-	"channel_create":   "channel creation",
-	"channel_update":   "channel update",
-	"channel_delete":   "channel deletion",
-	"role_create":      "role creation",
-	"role_update":      "role update",
-	"role_delete":      "role deletion",
-	"guild_update":     "server settings update",
+var intentVerbForms = map[string]struct {
+	Past string
+	Noun string
+}{
+	"ban":              {"banned", "ban"},
+	"unban":            {"unbanned", "unban"},
+	"kick":             {"kicked", "kick"},
+	"timeout":          {"timed out", "timeout"},
+	"untimeout":        {"untimed out", "untimeout"},
+	"mute":             {"muted", "mute"},
+	"unmute":           {"unmuted", "unmute"},
+	"deafen":           {"deafened", "deafen"},
+	"undeafen":         {"undeafened", "undeafen"},
+	"set_nickname":     {"renamed", "rename"},
+	"reset_nickname":   {"reset", "reset"},
+	"add_role":         {"given a role", "role add"},
+	"remove_role":      {"had a role removed", "role remove"},
+	"pin_message":      {"pinned a message", "pin"},
+	"unpin_message":    {"unpinned a message", "unpin"},
+	"delete_message":   {"had a message deleted", "deletion"},
+	"purge_messages":   {"had messages purged", "purge"},
+	"voice_disconnect": {"disconnected from voice", "voice disconnect"},
+	"channel_create":   {"created", "channel creation"},
+	"channel_update":   {"updated", "channel update"},
+	"channel_delete":   {"deleted", "channel deletion"},
+	"role_create":      {"created", "role creation"},
+	"role_update":      {"updated", "role update"},
+	"role_delete":      {"deleted", "role deletion"},
+	"guild_update":     {"changed", "server settings update"},
 }
 
 func PastTenseIntent(intent string) string {
-	if past, ok := intentPastTense[intent]; ok {
-		return past
+	if v, ok := intentVerbForms[intent]; ok {
+		return v.Past
 	}
 	return intent
 }
 
 func IntentNoun(intent string) string {
-	if noun, ok := intentNoun[intent]; ok {
-		return noun
+	if v, ok := intentVerbForms[intent]; ok {
+		return v.Noun
 	}
 	return intent
 }
@@ -233,24 +180,46 @@ type TemplateData struct {
 	GuildID         string
 	ChannelID       string
 	HasReason       bool
-	ActorState      ActorState
 	Source          string
 }
 
-func BuildTemplateData(result *LookupResult) TemplateData {
+func BuildTemplateData(result *LookupResult, renderer replies.Renderer) TemplateData {
 	if result == nil {
 		return TemplateData{
-			Actor:      "an unknown moderator",
-			ActorState: ActorStateExternalUnknownBot,
+			Actor: renderer.Get("handler", "actor_label_unknown_moderator", nil),
 		}
 	}
 
-	modLabel := result.ActorLabel()
+	var actor string
+	switch result.Classify() {
+	case ActorStateBotMention, ActorStateExternalBotMention, ActorStateExternalNamed:
+		if result.ActorID != "" && result.ActorID != "unknown" {
+			actor = "<@" + result.ActorID + ">"
+		} else if result.ActorName != "" {
+			actor = renderer.Get(
+				"handler", "actor_label_user_named",
+				map[string]string{"name": result.ActorName},
+			)
+		} else {
+			actor = renderer.Get("handler", "actor_label_unknown_moderator", nil)
+		}
+	case ActorStateExternalUnknownBot:
+		if result.ActorIsBot && result.ActorID != "" && result.ActorID != "unknown" {
+			actor = renderer.Get(
+				"handler", "actor_label_bot_mention",
+				map[string]string{"id": result.ActorID},
+			)
+		} else {
+			actor = renderer.Get("handler", "actor_label_automated_bot", nil)
+		}
+	default:
+		actor = renderer.Get("handler", "actor_label_unknown_moderator", nil)
+	}
 
 	return TemplateData{
 		TargetID:        result.TargetID,
-		ModeratorID:     modLabel,
-		Actor:           modLabel,
+		ModeratorID:     actor,
+		Actor:           actor,
 		PastTenseIntent: PastTenseIntent(result.Intent),
 		IntentNoun:      IntentNoun(result.Intent),
 		Reason:          result.Reason,
@@ -258,7 +227,6 @@ func BuildTemplateData(result *LookupResult) TemplateData {
 		GuildID:         result.GuildID,
 		ChannelID:       result.ChannelID,
 		HasReason:       result.Reason != "",
-		ActorState:      result.Classify(),
 		Source:          result.Source,
 	}
 }

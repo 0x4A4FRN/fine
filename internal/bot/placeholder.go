@@ -20,14 +20,13 @@ type placeholder struct {
 	done      chan struct{}
 }
 
-func noopStop() {}
 func (h *Handler) startPlaceholder(
 	channelID string,
 	sourceID string,
 	parentCtx context.Context,
 ) (ph *placeholder, stop func()) {
 	if h.messageAPI == nil || h.replies == nil {
-		return nil, noopStop
+		return nil, func() {}
 	}
 
 	initial := h.replies.Get("handler", "on_receive", nil)
@@ -37,7 +36,7 @@ func (h *Handler) startPlaceholder(
 		h.logger.Warn("handler: placeholder initial send returned empty id; proceeding without placeholder",
 			zap.String("variant", initial),
 		)
-		return nil, noopStop
+		return nil, func() {}
 	}
 	h.logger.Info("handler: placeholder posted",
 		zap.String("channel_id", channelID),

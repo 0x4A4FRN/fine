@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -102,6 +103,8 @@ type Handler struct {
 
 	cacheHitThreshold     float64
 	confirmWindowDuration time.Duration
+
+	httpClient *http.Client
 }
 
 type Option func(*Handler)
@@ -250,6 +253,12 @@ func NewHandler(provider llm.Provider, opts ...Option) *Handler {
 	}
 	if h.confirmWindowDuration == 0 {
 		h.confirmWindowDuration = 60 * time.Second
+	}
+	if h.httpClient == nil {
+		h.httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
+	if h.replies == nil {
+		h.replies = replies.NopRenderer{}
 	}
 
 	return h

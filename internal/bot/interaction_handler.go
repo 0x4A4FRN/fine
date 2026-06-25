@@ -376,9 +376,6 @@ func (h *Handler) respondInteraction(i *discordgo.InteractionCreate, message str
 }
 
 func (h *Handler) interactionText(key string) string {
-	if h.replies == nil {
-		return "[interaction." + key + "]"
-	}
 	return h.replies.Get("interaction", key, nil)
 }
 

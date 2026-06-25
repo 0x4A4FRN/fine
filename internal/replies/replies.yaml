@@ -2220,6 +2220,38 @@ handler:
     - <a:jumping:1517212537274499345> Coordinating...
     - <a:jumping:1517212537274499345> Building...
 
+  # handler.done is the generic success fallback used when an intent has no
+  # dedicated success template in replies.yaml. Previously this string lived
+  # inline in replies_handler.go::defaultSuccessText.
+  done:
+    - "Done."
+    - "Handled."
+    - "Taken care of."
+    - "Sorted."
+    - "All set."
+
+  # handler.failed_fallback is the generic failure message used when an intent
+  # has no dedicated failed template. Previously this was the Go const
+  # `fallbackFailureText` in replies_handler.go.
+  failed_fallback:
+    - "I couldn't complete that."
+    - "That didn't work. Sorry."
+    - "Something went wrong trying to do that."
+    - "Couldn't pull that off. Try again?"
+    - "Hit a snag. The action didn't go through."
+
+  # handler.actor_label_* are the human-readable labels produced by the
+  # inline actor switch in audit.BuildTemplateData. Previously these
+  # strings were inlined in internal/audit/lookup.go::ActorLabel.
+  actor_label_unknown_moderator:
+    - "an unknown moderator"
+  actor_label_user_named:
+    - "a user named {{.name}}"
+  actor_label_bot_mention:
+    - "a bot (<@{{.id}}>)"
+  actor_label_automated_bot:
+    - "an automated bot"
+
 setting:
   toggled:
     - "Fine, **{{.setting}}** is now **{{.value}}** for this server."

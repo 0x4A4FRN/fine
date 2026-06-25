@@ -12,11 +12,6 @@ import (
 	"github.com/0x4A4FRN/fine/internal/storage"
 )
 
-type StatusDiscordAPI interface {
-	MemberAPI
-	BotInfoAPI
-}
-
 type StatusExecutor struct {
 	discord   BotInfoAPI
 	pool      audit.DB
@@ -98,10 +93,12 @@ func (e *StatusExecutor) Execute(ctx context.Context, _ Action) error {
 	return &TextResult{Text: body + "\n" + footer}
 }
 
+const statusDBPingSQL = "SELECT 1"
+
 func measureDBLatency(ctx context.Context, pool audit.DB) (time.Duration, error) {
 	start := time.Now()
 	var dummy int
-	if err := pool.QueryRow(ctx, "SELECT 1").Scan(&dummy); err != nil {
+	if err := pool.QueryRow(ctx, statusDBPingSQL).Scan(&dummy); err != nil {
 		return time.Since(start), errors.Join(errors.New("status: db ping"), err)
 	}
 	return time.Since(start), nil

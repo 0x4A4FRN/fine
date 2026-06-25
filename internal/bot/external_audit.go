@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -109,25 +108,6 @@ func parseActorFromReason(reason string) (reasonExtract, bool) {
 	return reasonExtract{}, false
 }
 
-var intentKeywords = map[string][]string{
-	"ban":              {"ban"},
-	"unban":            {"unban"},
-	"kick":             {"kick"},
-	"timeout":          {"timeout", "mute"},
-	"untimeout":        {"untimeout", "unmute", "lift"},
-	"add_role":         {"role", "add"},
-	"remove_role":      {"role", "remove"},
-	"set_nickname":     {"nick", "nickname", "rename"},
-	"reset_nickname":   {"nick", "reset", "rename"},
-	"mute":             {"mute"},
-	"unmute":           {"unmute"},
-	"deafen":           {"deafen"},
-	"undeafen":         {"undeafen"},
-	"voice_disconnect": {"disconnect", "kick"},
-	"delete_message":   {"delete", "remove"},
-	"purge_messages":   {"purge", "clear"},
-}
-
 func (e *ExternalAudit) fetchAuditLog(
 	ctx context.Context,
 	guildID, targetID string,
@@ -138,7 +118,11 @@ func (e *ExternalAudit) fetchAuditLog(
 		return nil, errors.New("external_audit: no discord session")
 	}
 
-	time.Sleep(e.auditDelay)
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-time.After(e.auditDelay):
+	}
 
 	res, err := e.session.GuildAuditLog(
 		guildID, "", "", int(actionType), 5,
@@ -161,20 +145,13 @@ func (e *ExternalAudit) fetchAuditLog(
 		if !ok {
 			continue
 		}
-		if absDuration(ts.Sub(eventTime)) > 10*time.Second {
+		if ts.Sub(eventTime).Abs() > 10*time.Second {
 			continue
 		}
 		return entry, nil
 	}
 
 	return nil, nil
-}
-
-func absDuration(d time.Duration) time.Duration {
-	if d < 0 {
-		return -d
-	}
-	return d
 }
 
 func (e *ExternalAudit) resolveActor(
@@ -238,8 +215,6 @@ func (e *ExternalAudit) resolveActor(
 	}
 
 	if e.buffer != nil {
-		keywords := intentKeywordsForIntent("")
-		_ = keywords
 		if msg := e.buffer.ScanForAction(
 			"", targetID, banKindKeywords(),
 			5*time.Second, eventTime,
@@ -306,7 +281,6 @@ func (e *ExternalAudit) resolveUsernameViaCache(guildID, name string) string {
 	if err != nil || guild == nil {
 		return ""
 	}
-	target := strings.ToLower(name)
 	var match string
 	count := 0
 	for _, m := range guild.Members {
@@ -326,7 +300,6 @@ func (e *ExternalAudit) resolveUsernameViaCache(guildID, name string) string {
 	if count != 1 {
 		return ""
 	}
-	_ = target
 	return match
 }
 
@@ -335,13 +308,6 @@ func banKindKeywords() []string {
 		"ban", "kick", "timeout", "mute", "role", "nick", "deafen",
 		"pin", "unpin", "purge", "delete", "disconnect",
 	}
-}
-
-func intentKeywordsForIntent(intent string) []string {
-	if kws, ok := intentKeywords[intent]; ok {
-		return kws
-	}
-	return nil
 }
 
 func (e *ExternalAudit) enqueueAuditRow(
@@ -443,14 +409,13 @@ func (e *ExternalAudit) resolveAndUpdate(
 		action.GuildID, action.TargetID, entry.UserID, entry.Reason, eventTime,
 	)
 
-	if err := audit.UpdateActor(
-		bgCtx, e.db,
-		rowID,
-		resolved.ActorID,
-		resolved.ActorIsBot,
-		resolved.ActorName,
-		entry.Reason,
-	); err != nil {
+	if err := audit.UpdateActor(bgCtx, e.db, audit.ActorUpdate{
+		RowID:      rowID,
+		ActorID:    resolved.ActorID,
+		ActorIsBot: resolved.ActorIsBot,
+		ActorName:  resolved.ActorName,
+		Reason:     entry.Reason,
+	}); err != nil {
 		e.logger.Error("external_audit: update actor failed",
 			zap.String("intent", action.Intent),
 			zap.Int64("row_id", rowID),
@@ -489,10 +454,18 @@ func actionToLogAction(intent string) discordgo.AuditLogAction {
 		return discordgo.AuditLogActionMessageDelete
 	case "purge_messages":
 		return discordgo.AuditLogActionMessageBulkDelete
-	case "channel_create", "channel_update", "channel_delete":
+	case "channel_create":
 		return discordgo.AuditLogActionChannelCreate
-	case "role_create", "role_update", "role_delete":
+	case "channel_update":
+		return discordgo.AuditLogActionChannelUpdate
+	case "channel_delete":
+		return discordgo.AuditLogActionChannelDelete
+	case "role_create":
 		return discordgo.AuditLogActionRoleCreate
+	case "role_update":
+		return discordgo.AuditLogActionRoleUpdate
+	case "role_delete":
+		return discordgo.AuditLogActionRoleDelete
 	case "guild_update":
 		return discordgo.AuditLogActionGuildUpdate
 	default:
@@ -653,37 +626,29 @@ func (e *ExternalAudit) OnGuildMemberUpdateAudit(
 
 	before := m.BeforeUpdate
 	after := m.Member
-
-	var paramsMu sync.Mutex
-	params := map[string]any{}
+	eventTime := time.Now().UTC()
 
 	if diff := diffTimeout(before, after); diff != "" {
-		paramsMu.Lock()
-		params["timeout_state"] = diff
-		paramsMu.Unlock()
-		e.queueDiff(m.GuildID, userID, diff, params, time.Now().UTC())
+		params := map[string]any{"timeout_state": diff}
+		e.queueDiff(m.GuildID, userID, diff, params, eventTime)
 	}
 
 	added, removed := diffRoles(before, after)
 	if len(added) > 0 {
-		paramsMu.Lock()
-		params["added_role_ids"] = added
-		paramsMu.Unlock()
-		e.queueDiff(m.GuildID, userID, "add_role", params, time.Now().UTC())
+		params := map[string]any{"added_role_ids": added}
+		e.queueDiff(m.GuildID, userID, "add_role", params, eventTime)
 	}
 	if len(removed) > 0 {
-		paramsMu.Lock()
-		params["removed_role_ids"] = removed
-		paramsMu.Unlock()
-		e.queueDiff(m.GuildID, userID, "remove_role", params, time.Now().UTC())
+		params := map[string]any{"removed_role_ids": removed}
+		e.queueDiff(m.GuildID, userID, "remove_role", params, eventTime)
 	}
 
 	if before != nil && before.Nick != after.Nick {
-		paramsMu.Lock()
-		params["old_nick"] = before.Nick
-		params["new_nick"] = after.Nick
-		paramsMu.Unlock()
-		e.queueDiff(m.GuildID, userID, "set_nickname", params, time.Now().UTC())
+		params := map[string]any{
+			"old_nick": before.Nick,
+			"new_nick": after.Nick,
+		}
+		e.queueDiff(m.GuildID, userID, "set_nickname", params, eventTime)
 	}
 }
 
@@ -787,8 +752,6 @@ func (e *ExternalAudit) OnVoiceStateUpdate(
 
 	after := m.VoiceState
 	eventTime := time.Now().UTC()
-	bg, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
 	if before.Mute != after.Mute {
 		intent := "unmute"
@@ -796,7 +759,6 @@ func (e *ExternalAudit) OnVoiceStateUpdate(
 			intent = "mute"
 		}
 		e.queueDiff(m.GuildID, m.UserID, intent, nil, eventTime)
-		_ = bg
 	}
 	if before.Deaf != after.Deaf {
 		intent := "undeafen"
