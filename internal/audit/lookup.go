@@ -194,7 +194,7 @@ func BuildTemplateData(result *LookupResult, renderer replies.Renderer) Template
 	switch result.Classify() {
 	case ActorStateBotMention, ActorStateExternalBotMention, ActorStateExternalNamed:
 		if result.ActorID != "" && result.ActorID != "unknown" {
-			actor = "<@" + result.ActorID + ">"
+			actor = result.ActorID
 		} else if result.ActorName != "" {
 			actor = renderer.Get(
 				"handler", "actor_label_user_named",

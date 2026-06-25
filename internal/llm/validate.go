@@ -67,14 +67,49 @@ var validAuditInfoValues = []string{
 }
 
 var auditActionAliases = map[string]string{
-	"delete": "delete_message",
-	"purge":  "purge_messages",
-	"add":    "add_role",
-	"remove": "remove_role",
-	"nick":   "set_nickname",
-	"pin":    "pin_message",
-	"unpin":  "unpin_message",
+	"delete":           "delete_message",
+	"purge":            "purge_messages",
+	"add":              "add_role",
+	"remove":           "remove_role",
+	"nick":             "set_nickname",
+	"pin":              "pin_message",
+	"unpin":            "unpin_message",
+	"channel deletion": "channel_delete",
+	"channel create":   "channel_create",
+	"channel update":   "channel_update",
+	"role deletion":    "role_delete",
+	"role create":      "role_create",
+	"role update":      "role_update",
+	"server settings":  "guild_update",
+	"server update":    "guild_update",
 }
+
+// validAuditActions is the set of action strings audit_lookup.action may
+// hold after normalization. It's the union of suggestedIntents (the LLM's
+// direct moderation intents) and the external-audit intents (channel/role/
+// guild lifecycle events recorded by external_audit.go from Discord's
+// audit log). The external intents are NOT in suggestedIntents because
+// the bot never executes them — they only appear as audit_query filters
+// when a user asks "who deleted the channel?" / "who changed the role?".
+var validAuditActions = func() map[string]bool {
+	m := make(map[string]bool, len(suggestedIntents)+8)
+	for _, v := range suggestedIntents {
+		m[v] = true
+	}
+	for _, v := range []string{
+		"channel_create",
+		"channel_update",
+		"channel_delete",
+		"role_create",
+		"role_update",
+		"role_delete",
+		"guild_update",
+		"voice_disconnect",
+	} {
+		m[v] = true
+	}
+	return m
+}()
 
 func normalizeAuditAction(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
@@ -307,10 +342,17 @@ func isBrokenAuditLookup(q *AuditQuery) bool {
 	if q.Info == "" || !slices.Contains(validAuditInfoValues, q.Info) {
 		return true
 	}
-	actionUsable := q.Action != nil && *q.Action != "" &&
-		slices.Contains(suggestedIntents, *q.Action)
-	if actionUsable {
-		return false
+	// Normalize the action BEFORE checking validity: the LLM frequently
+	// emits natural phrasings ("channel deletion", "delete") that
+	// auditActionAliases maps to canonical intents. The prior code checked
+	// the raw string against the valid list first, so any non-canonical
+	// phrasing was rejected as broken before normalization could save it.
+	if q.Action != nil && *q.Action != "" {
+		normalized := normalizeAuditAction(*q.Action)
+		if validAuditActions[normalized] {
+			*q.Action = normalized
+			return false
+		}
 	}
 	targetUsable := q.TargetID != nil && *q.TargetID != "" &&
 		snowflakeRe.MatchString(*q.TargetID)
@@ -322,6 +364,8 @@ func validateAuditQuery(q *AuditQuery, logger *zap.Logger) error {
 		return fmt.Errorf("invalid info %q", q.Info)
 	}
 	if q.Action != nil {
+		// normalizeAuditAction is idempotent; isBrokenAuditLookup may
+		// have already normalized, but normalizing again is a no-op.
 		normalized := normalizeAuditAction(*q.Action)
 		if normalized != *q.Action {
 			logger.Info("llm: audit action filter normalized",
@@ -330,7 +374,7 @@ func validateAuditQuery(q *AuditQuery, logger *zap.Logger) error {
 			)
 			*q.Action = normalized
 		}
-		if !slices.Contains(suggestedIntents, *q.Action) {
+		if !validAuditActions[*q.Action] {
 			return fmt.Errorf("invalid action filter %q", *q.Action)
 		}
 	}

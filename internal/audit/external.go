@@ -96,7 +96,7 @@ const updateActorSQL = `
 UPDATE mod_actions
 SET actor_id    = COALESCE(NULLIF($2, ''), actor_id),
     actor_is_bot = $3,
-    actor_name   = NULLIF($4, ''),
+    actor_name   = $4,
     reason       = COALESCE(NULLIF($5, ''), reason)
 WHERE id = $1`
 

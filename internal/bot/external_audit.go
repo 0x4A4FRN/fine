@@ -20,6 +20,19 @@ const discordEpochMillis int64 = 1420070400000
 
 const defaultAuditFetchDelay = 400 * time.Millisecond
 
+// auditRetryInterval is the gap between successive audit-log polls when the
+// first fetch returns no matching entry. Discord's audit log API has a
+// replication lag (typically 500ms-2s, occasionally longer for native UI
+// actions) between when an action happens and when the entry becomes visible
+// via REST. A single fetch at auditDelay was missing entries for native
+// nickname changes via the right-click UI flow.
+//
+// Value chosen to stay under Discord's 5-requests-per-10s-per-guild rate
+// limit on the audit log endpoint: with auditDelay=400ms and a 10s budget,
+// this yields ~7 polls, leaving headroom for the periodic audit log reads
+// other parts of the bot may issue.
+const auditRetryInterval = 1500 * time.Millisecond
+
 type ResolvedActor struct {
 	ActorID    string
 	ActorIsBot bool
@@ -118,12 +131,42 @@ func (e *ExternalAudit) fetchAuditLog(
 		return nil, errors.New("external_audit: no discord session")
 	}
 
+	// Initial settle delay so Discord has a chance to write the audit log
+	// entry before our first read. Subsequent retries use auditRetryInterval.
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-time.After(e.auditDelay):
 	}
 
+	for {
+		entry, err := e.fetchAndMatchAuditEntry(ctx, guildID, targetID, actionType, eventTime)
+		if err != nil {
+			return nil, err
+		}
+		if entry != nil {
+			return entry, nil
+		}
+
+		// No match yet. Wait auditRetryInterval and try again, honouring
+		// ctx cancellation so we don't outlive the resolveAndUpdate budget.
+		select {
+		case <-ctx.Done():
+			return nil, nil
+		case <-time.After(auditRetryInterval):
+		}
+	}
+}
+
+// fetchAndMatchAuditEntry does a single GuildAuditLog read and returns the
+// first entry whose TargetID matches and whose snowflake-timestamp is within
+// 10s of eventTime. Returns (nil, nil) when no entry matches.
+func (e *ExternalAudit) fetchAndMatchAuditEntry(
+	ctx context.Context,
+	guildID, targetID string,
+	actionType discordgo.AuditLogAction,
+	eventTime time.Time,
+) (*discordgo.AuditLogEntry, error) {
 	res, err := e.session.GuildAuditLog(
 		guildID, "", "", int(actionType), 5,
 	)
@@ -375,9 +418,12 @@ func (e *ExternalAudit) resolveAndUpdate(
 	action audit.ExternalAction,
 	eventTime time.Time,
 ) {
+	// Polling budget: auditDelay (initial settle) + 10s of retries at
+	// auditRetryInterval. The prior auditDelay+5s budget was too tight for
+	// Discord's audit log replication lag on native UI actions.
 	bgCtx, cancel := context.WithTimeout(
 		context.Background(),
-		e.auditDelay+5*time.Second,
+		e.auditDelay+10*time.Second,
 	)
 	defer cancel()
 
@@ -398,9 +444,14 @@ func (e *ExternalAudit) resolveAndUpdate(
 		return
 	}
 	if entry == nil {
-		e.logger.Debug("external_audit: no audit entry; leaving row unknown",
+		// After exhausting the polling budget (~10s + auditDelay). The row
+		// stays at its insert-time actor_id="unknown". Logged at Info
+		// because silent unknown-actor rows are operationally interesting.
+		e.logger.Info("external_audit: no audit entry after retries; leaving row unknown",
 			zap.String("intent", action.Intent),
 			zap.String("guild_id", action.GuildID),
+			zap.String("target_id", action.TargetID),
+			zap.Duration("budget", e.auditDelay+10*time.Second),
 		)
 		return
 	}
@@ -792,11 +843,29 @@ func (e *ExternalAudit) OnMessageDeleteAudit(s *discordgo.Session, m *discordgo.
 		return
 	}
 
+	// Author resolution: prefer the embedded Message (a snapshot from the
+	// state cache taken before discordgo removed the entry), then fall back
+	// to a live state lookup for the rare case where the snapshot lacks the
+	// author.
 	authorID := ""
-	if s != nil {
+	if m.Message.Author != nil {
+		authorID = m.Message.Author.ID
+	}
+	if authorID == "" && s != nil {
 		if msg, err := s.State.Message(m.ChannelID, msgID); err == nil && msg != nil && msg.Author != nil {
 			authorID = msg.Author.ID
 		}
+	}
+
+	// Skip the bot's own message deletions. The bot routinely deletes its
+	// own placeholder/reply messages via deletePlaceholderAndReply; those
+	// are UI affordances, not moderation actions. Recording them as
+	// external audit rows produced fake "native delete_message" entries
+	// that then failed to resolve (Discord doesn't write audit-log entries
+	// for a bot deleting its own messages), leaving actor_id="unknown" and
+	// spamming the "no audit entry after retries" log line.
+	if authorID == e.botUserID() {
+		return
 	}
 
 	bg, cancel := context.WithTimeout(context.Background(), 10*time.Second)
